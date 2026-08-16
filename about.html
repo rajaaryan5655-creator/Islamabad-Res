@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About Us — Islamabad Restaurant</title>
+<meta name="description" content="Our story, mission and quality standards — authentic Pakistani cuisine served since 2015.">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&family=Montserrat:wght@500;600;700;800&family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<!-- ===================== HEADER ===================== -->
+<header class="site-header" id="header">
+  <div class="container">
+    <!-- top information bar -->
+    <div class="topbar">
+      <a href="index.html" class="brand" aria-label="Islamabad Restaurant home">
+        <span class="brand__mark" data-icon="chef"></span>
+        <span class="brand__text">
+          <span class="brand__top">ISLAMABAD</span>
+          <span class="brand__bottom">RESTAURANT</span>
+        </span>
+      </a>
+
+      <div class="topbar__info">
+        <span class="info-item info-item--red"><span data-icon="pin"></span> Margalla Town, Islamabad</span>
+        <span class="info-item"><span data-icon="clock"></span> 11:00 AM – 11:00 PM</span>
+        <span class="info-item"><span data-icon="phone"></span> +92 306 4650507</span>
+      </div>
+
+      <a class="btn-order-top" href="menu.html">ORDER ONLINE</a>
+    </div>
+
+    <!-- navigation -->
+    <nav class="navbar" aria-label="Primary">
+      <a href="index.html" class="brand brand--sm">
+        <span class="brand__mark" data-icon="chef"></span>
+        <span class="brand__text">
+          <span class="brand__top">ISLAMABAD</span>
+          <span class="brand__bottom">RESTAURANT</span>
+        </span>
+      </a>
+
+      <ul class="nav-list">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="menu.html">Menu</a></li>
+        <li><a href="menu.html">Order Online</a></li>
+        <li><a href="reservation.html">Reservation</a></li>
+        <li><a href="about.html" class="active">About Us</a></li>
+        <li><a href="gallery.html">Gallery</a></li>
+        <li><a href="contact.html">Contact Us</a></li>
+      </ul>
+
+      <div class="nav-actions">
+        <button class="cart-btn" id="cartBtn" aria-label="Open cart">
+          <span data-icon="cart"></span>
+          <span class="cart-count" id="cartCount">2</span>
+        </button>
+        <button class="burger" id="burger" aria-label="Open menu" aria-expanded="false">
+          <span data-icon="burger"></span>
+        </button>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<!-- mobile drawer -->
+<div class="backdrop" id="backdrop"></div>
+<aside class="mobile-nav" id="mobileNav" aria-label="Mobile">
+  <div class="mobile-nav__head">
+    <a href="index.html" class="brand brand--sm">
+      <span class="brand__mark" data-icon="chef"></span>
+      <span class="brand__text">
+        <span class="brand__top">ISLAMABAD</span>
+        <span class="brand__bottom">RESTAURANT</span>
+      </span>
+    </a>
+    <button class="mobile-nav__close" id="navClose" aria-label="Close menu">&times;</button>
+  </div>
+  <ul>
+    <li><a href="index.html">Home</a></li>
+    <li><a href="menu.html">Menu</a></li>
+    <li><a href="menu.html">Order Online</a></li>
+    <li><a href="reservation.html">Reservation</a></li>
+    <li><a href="about.html" class="active">About Us</a></li>
+    <li><a href="gallery.html">Gallery</a></li>
+    <li><a href="contact.html">Contact Us</a></li>
+  </ul>
+  <div class="mobile-nav__info">
+    <span class="info-item info-item--red"><span data-icon="pin"></span> Margalla Town, Islamabad</span>
+    <span class="info-item"><span data-icon="clock"></span> 11:00 AM – 11:00 PM</span>
+    <span class="info-item"><span data-icon="phone"></span> +92 306 4650507</span>
+  </div>
+  <a href="menu.html" class="btn btn--red">Order Online</a>
+</aside>
+
+<main>
+  
+  <section class="page-banner">
+    <img src="assets/img/banner-spices.jpg" alt="">
+    <div class="container">
+      <h1>ABOUT US</h1>
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href="index.html">Home</a><span class="sep">&rsaquo;</span><span class="current">About Us</span>
+      </nav>
+    </div>
+  </section>
+  <section class="section">
+    <div class="container">
+      <div class="about-grid">
+        <div class="about-media reveal">
+          <img src="assets/img/restaurant-building.svg" alt="Islamabad Restaurant building at night">
+        </div>
+        <div class="about-body reveal" data-delay="120">
+          <p class="script">Our Story</p>
+          <h2>Islamabad Restaurant</h2>
+          <p>Islamabad Restaurant was founded with a simple mission: to serve delicious, high-quality food in a warm and welcoming environment.</p>
+          <p>We combine traditional Pakistani flavors with modern cooking techniques to deliver an unforgettable dining experience.</p>
+          <div class="about-features">
+            <div class="about-feature"><span class="about-feature__icon" data-icon="leaf"></span><p>Quality Ingredients</p></div>
+            <div class="about-feature"><span class="about-feature__icon" data-icon="chef-hat"></span><p>Expert Chef</p></div>
+            <div class="about-feature"><span class="about-feature__icon" data-icon="clean"></span><p>Hygienic Kitchen</p></div>
+            <div class="about-feature"><span class="about-feature__icon" data-icon="ambience"></span><p>Great Ambiance</p></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats reveal" style="margin-top:46px">
+        <div class="stats__grid">
+          <div class="stat"><div style="text-align:center"><div class="stat__num" data-count="10" data-suffix="+">0</div><div class="stat__label">Years Experience</div></div></div>
+          <div class="stat"><div style="text-align:center"><div class="stat__num" data-count="50" data-suffix="+">0</div><div class="stat__label">Menu Items</div></div></div>
+          <div class="stat"><div style="text-align:center"><div class="stat__num" data-count="100" data-suffix="%">0</div><div class="stat__label">Customer Satisfaction</div></div></div>
+          <div class="stat"><div style="text-align:center"><div class="stat__num" data-count="688" data-suffix="+">0</div><div class="stat__label">Happy Customers</div></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" style="background:var(--bg-soft);padding-top:0;padding-bottom:62px">
+    <div class="container" style="padding-top:62px">
+      <header class="section-head reveal">
+        <p class="section-head__script">Why Choose Us</p>
+        <h2 class="section-head__title">Our Promise</h2>
+        <span class="section-head__sep" data-icon="sep"></span>
+      </header>
+      <div class="features__grid">
+        <article class="feature-card reveal"><span class="feature-card__icon" data-icon="scooter"></span><div><h3>Fast Delivery</h3><p>On time, every time</p></div></article>
+        <article class="feature-card reveal" data-delay="90"><span class="feature-card__icon" data-icon="award"></span><div><h3>Best Quality</h3><p>100% quality food</p></div></article>
+        <article class="feature-card reveal" data-delay="180"><span class="feature-card__icon" data-icon="card"></span><div><h3>Easy Payment</h3><p>Cash or online</p></div></article>
+        <article class="feature-card reveal" data-delay="270"><span class="feature-card__icon" data-icon="support"></span><div><h3>24/7 Support</h3><p>Always here to help</p></div></article>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ===================== FOOTER ===================== -->
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <a href="index.html" class="brand" style="margin-bottom:14px">
+          <span class="brand__mark" data-icon="chef"></span>
+          <span class="brand__text">
+            <span class="brand__top">ISLAMABAD</span>
+            <span class="brand__bottom">RESTAURANT</span>
+          </span>
+        </a>
+        <p>Serving the true taste of Pakistan since 2015 — signature biryani, sizzling BBQ and rich karahi, prepared fresh every single day.</p>
+        <div class="socials">
+          <a href="#" aria-label="Facebook"><span data-icon="fb"></span></a>
+          <a href="#" aria-label="Instagram"><span data-icon="ig"></span></a>
+          <a href="#" aria-label="WhatsApp"><span data-icon="wa"></span></a>
+          <a href="#" aria-label="YouTube"><span data-icon="yt"></span></a>
+        </div>
+      </div>
+      <div>
+        <h4>Quick Links</h4>
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="menu.html">Menu</a></li>
+          <li><a href="reservation.html">Reservation</a></li>
+          <li><a href="about.html">About Us</a></li>
+          <li><a href="gallery.html">Gallery</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Our Menu</h4>
+        <ul>
+          <li><a href="menu.html">Biryani</a></li>
+          <li><a href="menu.html">BBQ &amp; Grill</a></li>
+          <li><a href="menu.html">Karahi &amp; Handi</a></li>
+          <li><a href="menu.html">Fast Food</a></li>
+          <li><a href="menu.html">Drinks &amp; Desserts</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Get In Touch</h4>
+        <ul>
+          <li class="info-item info-item--red"><span data-icon="pin"></span> Margalla Town, Islamabad</li>
+          <li class="info-item"><span data-icon="phone"></span> +92 306 4650507</li>
+          <li class="info-item"><span data-icon="clock"></span> 11:00 AM – 11:00 PM (Daily)</li>
+          <li class="info-item"><span data-icon="mail"></span> hello@islamabadrestaurant.pk</li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© <span id="year"></span> Islamabad Restaurant. All rights reserved.</span>
+      <span>Designed &amp; developed with passion in Islamabad.</span>
+    </div>
+  </div>
+</footer>
+
+<button class="to-top" id="toTop" aria-label="Back to top"><span data-icon="up"></span></button>
+<div class="toast" id="toast"></div>
+
+<script src="assets/js/icons.js"></script>
+<script src="assets/js/data.js"></script>
+<script src="assets/js/main.js"></script>
+</body>
+</html>
