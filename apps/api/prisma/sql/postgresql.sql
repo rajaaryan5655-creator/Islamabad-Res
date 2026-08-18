@@ -121,6 +121,7 @@ CREATE INDEX IF NOT EXISTS "MenuItem_categoryId_idx" ON "MenuItem"("categoryId")
 CREATE INDEX IF NOT EXISTS "MenuItem_isAvailable_idx" ON "MenuItem"("isAvailable");
 CREATE INDEX IF NOT EXISTS "MenuItem_isFeatured_idx" ON "MenuItem"("isFeatured");
 CREATE INDEX IF NOT EXISTS "MenuItem_orderCount_idx" ON "MenuItem"("orderCount");
+CREATE INDEX IF NOT EXISTS "MenuItem_categoryId_isAvailable_idx" ON "MenuItem"("categoryId", "isAvailable");
 
 CREATE TABLE IF NOT EXISTS "Order" (
   "id" TEXT PRIMARY KEY,
@@ -173,6 +174,9 @@ CREATE INDEX IF NOT EXISTS "Order_userId_idx" ON "Order"("userId");
 CREATE INDEX IF NOT EXISTS "Order_status_idx" ON "Order"("status");
 CREATE INDEX IF NOT EXISTS "Order_createdAt_idx" ON "Order"("createdAt");
 CREATE INDEX IF NOT EXISTS "Order_paymentStatus_idx" ON "Order"("paymentStatus");
+CREATE INDEX IF NOT EXISTS "Order_status_createdAt_idx" ON "Order"("status", "createdAt");
+CREATE INDEX IF NOT EXISTS "Order_userId_createdAt_idx" ON "Order"("userId", "createdAt");
+CREATE INDEX IF NOT EXISTS "Order_couponCode_idx" ON "Order"("couponCode");
 
 CREATE TABLE IF NOT EXISTS "OrderItem" (
   "id" TEXT PRIMARY KEY,
@@ -262,6 +266,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "Reservation_code_key" ON "Reservation"("code"
 CREATE INDEX IF NOT EXISTS "Reservation_date_time_idx" ON "Reservation"("date", "time");
 CREATE INDEX IF NOT EXISTS "Reservation_status_idx" ON "Reservation"("status");
 CREATE INDEX IF NOT EXISTS "Reservation_userId_idx" ON "Reservation"("userId");
+CREATE INDEX IF NOT EXISTS "Reservation_date_status_idx" ON "Reservation"("date", "status");
 
 CREATE TABLE IF NOT EXISTS "CouponRedemption" (
   "id" TEXT PRIMARY KEY,
@@ -422,6 +427,8 @@ CREATE TABLE IF NOT EXISTS "Review" (
 
 CREATE INDEX IF NOT EXISTS "Review_menuItemId_idx" ON "Review"("menuItemId");
 CREATE INDEX IF NOT EXISTS "Review_isApproved_idx" ON "Review"("isApproved");
+CREATE INDEX IF NOT EXISTS "Review_isApproved_createdAt_idx" ON "Review"("isApproved", "createdAt");
+CREATE INDEX IF NOT EXISTS "Review_userId_idx" ON "Review"("userId");
 
 CREATE TABLE IF NOT EXISTS "AuditLog" (
   "id" TEXT PRIMARY KEY,

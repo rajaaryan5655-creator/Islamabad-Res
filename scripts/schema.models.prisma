@@ -143,6 +143,8 @@ model MenuItem {
   @@index([isAvailable])
   @@index([isFeatured])
   @@index([orderCount])
+  // Menu listing: dishes in a section that are actually on today.
+  @@index([categoryId, isAvailable])
 }
 
 /* -------------------------------- orders --------------------------------- */
@@ -199,6 +201,11 @@ model Order {
   @@index([status])
   @@index([createdAt])
   @@index([paymentStatus])
+  // The admin order list filters on status and sorts by date in one query.
+  @@index([status, createdAt])
+  // Customer order history.
+  @@index([userId, createdAt])
+  @@index([couponCode])
 }
 
 model OrderItem {
@@ -292,6 +299,8 @@ model Reservation {
   @@index([date, time])
   @@index([status])
   @@index([userId])
+  // Availability and the day sheet both filter date + status together.
+  @@index([date, status])
 }
 
 /* ------------------------------- marketing ------------------------------- */
@@ -461,6 +470,9 @@ model Review {
 
   @@index([menuItemId])
   @@index([isApproved])
+  // Moderation queue is ordered newest-first within a status.
+  @@index([isApproved, createdAt])
+  @@index([userId])
 }
 
 /* ------------------------------- operations ------------------------------ */

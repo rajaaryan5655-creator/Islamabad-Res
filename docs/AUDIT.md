@@ -5,7 +5,8 @@ severity, and every item is either fixed in this pass or explicitly deferred wit
 reason.
 
 **Audit date:** 18 August 2026
-**Baseline:** 191 tests passing · 0 TypeScript errors · production build clean
+**Baseline at audit:** 191 tests passing · 0 TypeScript errors · production build clean
+**After this pass:** 240 tests passing (202 API, 38 web) · 0 TypeScript errors · build clean
 
 ---
 
@@ -19,7 +20,8 @@ reason.
 | `docs` | 5 | 1,311 |
 | `scripts` | 4 | 745 |
 
-- **35 web routes**, **84 API endpoints**, **22 database models**
+- At audit: **35 web routes**, **84 API endpoints**, **22 database models**
+- After this pass: **41 web routes**, **112 API endpoints**, **28 database models**
 - Stack: Next.js 16 (App Router, React 19), Express 5, Prisma 7, Tailwind v4,
   Zustand, TanStack Query, Zod, Framer Motion, Recharts
 
@@ -70,12 +72,12 @@ stable and unaffected by any advisory.
 
 | # | Finding | Status |
 | --- | --- | --- |
-| L1 | Hero image is 1.6 MB unoptimised JPEG source; no explicit `sizes` on several grid images. | ✅ Fixed |
+| L1 | Hero image is 1.6 MB unoptimised JPEG source; no explicit `sizes` on several grid images. | ✅ Verified — every `fill` image already carries `sizes` |
 | L2 | No `loading.tsx` or `error.tsx` boundaries — a slow API showed a blank screen, and a thrown error showed the Next.js default. | ✅ Fixed |
 | L3 | Admin tables are not keyboard-navigable to the same standard as the storefront; some icon-only buttons lacked discernible names. | ✅ Fixed |
 | L4 | No `<noscript>` path and no skip-link on admin. | ✅ Fixed |
-| L5 | Recharts (~90 KB) is imported directly into the admin overview, inflating its first load. | ✅ Fixed (dynamic import) |
-| L6 | No database indexes on `Order.trackingToken` lookups by `zoneId`, or `MenuItem.slug` ordering paths. | ✅ Fixed |
+| L5 | Recharts (~90 KB) is imported directly into the admin overview, inflating its first load. | ✅ Fixed — extracted to `components/admin/charts` and loaded via `next/dynamic` with `ssr: false` |
+| L6 | Composite indexes missing for the queries the app actually runs. | ✅ Fixed — 47 indexes; added `Order(status, createdAt)`, `Order(userId, createdAt)`, `Order(couponCode)`, `Reservation(date, status)`, `MenuItem(categoryId, isAvailable)`, `Review(isApproved, createdAt)`, `Review(userId)` |
 
 ### ✅ Verified sound — no change needed
 
@@ -90,6 +92,19 @@ stable and unaffected by any advisory.
   Explicit tests for SQL injection, XSS, hash leakage and user enumeration.
 - **SEO.** Restaurant/Menu/MenuItem/FAQ/Article/Breadcrumb JSON-LD, dynamic sitemap,
   robots, canonical + OG + Twitter on every page.
+
+### 🔎 Found during implementation, not at audit
+
+These surfaced while building and verifying the fixes above. Each is a genuine defect
+the original scan missed.
+
+| # | Finding | Impact | Status |
+| --- | --- | --- | --- |
+| X1 | **`couponSchema` silently dropped `perUserLimit`.** The admin endpoints validate against the schema, which had no such field, so Zod stripped it and *every* coupon was created with a null limit. The enforcement logic in `resolveCoupon` was correct but never had a value to enforce — a one-per-customer offer was unlimited in practice. | Revenue leak | ✅ Fixed + regression test |
+| X2 | **`GET /admin/customers/:id` returned `passwordHash`.** A bare Prisma `include` returns every scalar on the model; the bcrypt hash was being sent to the browser for any manager viewing a customer. | 🔴 Security | ✅ Fixed — explicit `select` |
+| X3 | **`db:push` could not add columns to existing tables.** The generated DDL uses `CREATE TABLE IF NOT EXISTS`, which is a no-op once the table exists, so any new column reached fresh databases only. Existing environments failed at runtime with "column does not exist". | Deployment | ✅ Fixed — the applier now diffs the DDL against the live table and emits `ALTER TABLE … ADD COLUMN` on SQLite and PostgreSQL |
+| X4 | **Payment intents quoted the gross total.** With a gift card applied, the stored `Payment.amount` was correct but the intent handed to the gateway was not, so a card would have been charged the pre-gift-card amount. | Would overcharge | ✅ Fixed |
+| X5 | **Order responses leaked raw JSON.** `items[].options` is a JSON string column; several endpoints returned it unparsed, so clients received `"[{...}]"` instead of an array. | Correctness | ✅ Fixed — single `serializeOrder` helper on every path |
 
 ---
 
@@ -106,6 +121,25 @@ stable and unaffected by any advisory.
 9. Customer: coupons page, gift-card redemption at checkout
 10. All medium bugs fixed, pagination standardised, indexes added
 11. Loading/error boundaries, accessibility fixes, bundle reduction
+12. Five further defects found during implementation and verification (X1–X5)
+
+### Verified end to end against a running server
+
+Not just unit-tested — each of these was exercised over HTTP against the live API:
+
+- Option pricing: Rs. 1,750 base − 400 (half kg) + 160 (naan) = Rs. 1,510 × 2 = Rs. 3,020
+- Missing required option, unknown choice id, and sold-out choice all rejected
+- Password reset: weak password refused, reset applied, token reuse refused,
+  old password invalidated, new password accepted
+- Email verification: verified, second click refused, resend reports already-verified
+- Guest coupon limit: blocked on repeat email, repeat phone, and email/phone crossover;
+  an unrelated guest still gets the discount
+- Refunds: partial → remainder → over-refund refused; loyalty clawed back proportionally
+- Reservations: PENDING by default, approve allocates a table, reject releases it,
+  second decision refused, `autoApproveReservations` flips the behaviour
+- Gift cards: full coverage settles the order (nothing due), partial coverage bills the
+  net, exhausted and unknown cards refused, balance untouched when checkout fails
+- Settings: `acceptingReservations: false` closes the booking form with a real message
 
 ---
 
@@ -116,4 +150,5 @@ stable and unaffected by any advisory.
 | Recharts v3 upgrade | Breaking API change; current version is stable and not subject to any advisory. Worth doing in a dedicated pass. |
 | Real SMTP delivery | Requires client credentials. The mailer is fully implemented with a pluggable transport and logs rendered HTML in development; set `SMTP_URL` to go live. |
 | Live Stripe/PayPal keys | Client-supplied. Sandbox path exercises the full flow. |
-| Lighthouse audit | Chromium cannot be downloaded in this sandbox. Build is optimised for it; verify on the first real deployment. |
+| Lighthouse audit | Chromium cannot be downloaded in this sandbox, so the 95+/SEO-100 targets are **unverified**. The build is optimised for them — self-hosted fonts, code-split charts, `sizes` on every responsive image, full metadata and JSON-LD — but the numbers must be confirmed on the first real deployment. |
+| Web Push in production | Implemented and gated on VAPID keys. Generate a pair with `npx web-push generate-vapid-keys` and set `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY`; no code change needed. |

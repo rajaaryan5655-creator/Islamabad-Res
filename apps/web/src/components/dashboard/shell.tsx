@@ -40,6 +40,13 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-cream pt-[7.5rem]">
+      <a
+        href="#dashboard-main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-sm focus:bg-ember-500 focus:px-4 focus:py-2 focus:text-white"
+      >
+        Skip to content
+      </a>
+
       <div className="container-luxe grid gap-8 py-10 lg:grid-cols-[15rem_1fr]">
         <aside className="lg:sticky lg:top-28 lg:h-fit">
           <div className="mb-5 flex items-center gap-3 rounded-sm border border-black/10 bg-white p-4">
@@ -87,7 +94,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           </nav>
         </aside>
 
-        <div className="min-w-0">{children}</div>
+        <main id="dashboard-main" tabIndex={-1} className="min-w-0">
+          {children}
+        </main>
       </div>
     </div>
   );

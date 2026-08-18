@@ -63,6 +63,14 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-charcoal text-cream">
+      {/* Staff work this panel all day; keyboard users need to bypass the nav. */}
+      <a
+        href="#admin-main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[200] focus:rounded-sm focus:bg-saffron-400 focus:px-4 focus:py-2 focus:font-medium focus:text-obsidian"
+      >
+        Skip to content
+      </a>
+
       <div className="flex">
         {/* sidebar */}
         <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-white/8 bg-obsidian lg:flex">
@@ -141,7 +149,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        <main className="min-w-0 flex-1 p-5 pb-24 lg:p-8">{children}</main>
+        <main id="admin-main" tabIndex={-1} className="min-w-0 flex-1 p-5 pb-24 lg:p-8">
+          {children}
+        </main>
       </div>
     </div>
   );

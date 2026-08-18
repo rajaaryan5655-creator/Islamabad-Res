@@ -3,25 +3,31 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import dynamic from 'next/dynamic';
 import { ArrowDownRight, ArrowUpRight, CalendarDays, Inbox, Receipt, TrendingUp, Users } from 'lucide-react';
 import { api } from '@/lib/api';
 import { Skeleton } from '@/components/ui/primitives';
 import { Button } from '@/components/ui/button';
 import { cn, formatPKR } from '@/lib/utils';
+
+/**
+ * Charts are loaded on demand: Recharts is ~90 KB and the KPI cards above the
+ * fold do not need it. `ssr: false` because the library measures the DOM.
+ */
+const chartFallback = <Skeleton className="h-full" />;
+
+const RevenueChart = dynamic(() => import('@/components/admin/charts').then((m) => m.RevenueChart), {
+  ssr: false,
+  loading: () => chartFallback,
+});
+const TopSellersChart = dynamic(() => import('@/components/admin/charts').then((m) => m.TopSellersChart), {
+  ssr: false,
+  loading: () => chartFallback,
+});
+const OrderMixChart = dynamic(() => import('@/components/admin/charts').then((m) => m.OrderMixChart), {
+  ssr: false,
+  loading: () => chartFallback,
+});
 
 interface Overview {
   revenue: { today: number; month: number; prevMonthToDate: number; growthPct: number | null };
@@ -44,7 +50,7 @@ interface Report {
   topItems: { name: string; quantity: number; revenue: number }[];
 }
 
-const PIE_COLORS = ['#c8102e', '#f4b400', '#8f0a20'];
+const PIE_COLORS = ['#c8102e', '#f4b400', '#7a8b99']; // must match components/admin/charts
 
 export default function AdminOverviewPage() {
   const [period, setPeriod] = useState<'daily' | 'weekly' | 'monthly' | 'annual'>('monthly');
@@ -204,40 +210,7 @@ export default function AdminOverviewPage() {
 
         <div className="h-72">
           {series ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={series.series} margin={{ top: 5, right: 5, left: -18, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#c8102e" stopOpacity={0.55} />
-                    <stop offset="100%" stopColor="#c8102e" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  stroke="rgba(244,241,236,0.35)"
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(d: string) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                  minTickGap={28}
-                />
-                <YAxis
-                  stroke="rgba(244,241,236,0.35)"
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v: number) => (v >= 1000 ? `${Math.round(v / 1000)}k` : String(v))}
-                />
-                <Tooltip
-                  contentStyle={{ background: '#121212', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, fontSize: 12 }}
-                  labelStyle={{ color: '#f4b400' }}
-                  formatter={(value: number, name: string) => [name === 'revenue' ? formatPKR(value) : value, name === 'revenue' ? 'Revenue' : 'Orders']}
-                  labelFormatter={(d: string) => new Date(d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'long' })}
-                />
-                <Area type="monotone" dataKey="revenue" stroke="#c8102e" strokeWidth={2} fill="url(#rev)" />
-              </AreaChart>
-            </ResponsiveContainer>
+            <RevenueChart data={series.series} />
           ) : (
             <Skeleton className="h-full" />
           )}
@@ -286,38 +259,14 @@ export default function AdminOverviewPage() {
               <div>
                 <h3 className="mb-4 text-xs uppercase tracking-widest text-cream/45">Top sellers</h3>
                 <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={report.topItems.slice(0, 7)} layout="vertical" margin={{ left: 4, right: 12 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={false} />
-                      <XAxis type="number" stroke="rgba(244,241,236,0.35)" fontSize={11} tickLine={false} axisLine={false} />
-                      <YAxis type="category" dataKey="name" stroke="rgba(244,241,236,0.5)" fontSize={11} tickLine={false} axisLine={false} width={125} />
-                      <Tooltip
-                        cursor={{ fill: 'rgba(255,255,255,0.04)' }}
-                        contentStyle={{ background: '#121212', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, fontSize: 12 }}
-                        formatter={(v: number) => [formatPKR(v), 'Revenue']}
-                      />
-                      <Bar dataKey="revenue" fill="#f4b400" radius={[0, 3, 3, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  <TopSellersChart data={report.topItems.slice(0, 7)} />
                 </div>
               </div>
 
               <div>
                 <h3 className="mb-4 text-xs uppercase tracking-widest text-cream/45">Order mix</h3>
                 <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={typeData} dataKey="value" nameKey="name" innerRadius={52} outerRadius={84} paddingAngle={3}>
-                        {typeData.map((_, i) => (
-                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} stroke="none" />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        contentStyle={{ background: '#121212', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 4, fontSize: 12 }}
-                        formatter={(v: number, n: string) => [`${v} orders`, n]}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  <OrderMixChart data={typeData} />
                 </div>
                 <ul className="mt-2 flex justify-center gap-4 text-xs text-cream/55">
                   {typeData.map((d, i) => (
