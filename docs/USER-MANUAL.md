@@ -10,9 +10,17 @@ Everything you can do on **islamabadrestaurant.pk**.
 2. Choose **Delivery**, **Pickup** or **Dine in**.
 3. For delivery, pick your area. You will see the charge, the minimum order and the
    expected time before you add anything.
-4. Add dishes. Use **Notes for the kitchen** on any dish for things like *less spice*,
-   *no coriander* or *extra raita* — the cooks see these on the ticket.
-5. Go to **Checkout**, enter your details, apply a coupon if you have one, and pay.
+4. Add dishes. Many dishes let you **choose how you want them** — a karahi by weight, a
+   biryani by portion and cut, BBQ by the number of skewers — plus add-ons like extra
+   raita or naan. The price updates as you choose, so you always see the real total
+   before you add anything.
+5. Use **Notes for the kitchen** on any dish for things like *less spice*, *no coriander*
+   or *extra ginger* — the cooks see these on the ticket.
+6. Go to **Checkout**, enter your details, apply a coupon or gift card if you have one,
+   and pay.
+
+The same dish ordered two ways stays as two separate lines in your basket, so you can
+have one half-kg mild and one one-kg hot without them merging.
 
 You do not need an account to order. Signing in saves your address, earns points and
 lets you reorder in one tap.
@@ -66,6 +74,12 @@ grid shows live availability.
 
 Fill in your details and confirm. You get a **confirmation code** immediately — keep it.
 
+**We confirm bookings by hand.** Your request is logged straight away and a table is held
+for you, but it is not confirmed until someone on the floor has checked it — usually
+within the hour. You will get an email either way: a confirmation with your table, or a
+short note explaining why we cannot seat that party at that time. Nothing is left
+hanging.
+
 **Changing or cancelling.** Free up to two hours before. Sign in and use **Reservations**
 in your dashboard, or use your confirmation code.
 
@@ -114,10 +128,36 @@ Your dashboard has:
 | **Reservations** | Upcoming and past bookings, change or cancel |
 | **Loyalty** | Points balance, tier progress, full history, referral code |
 | **Addresses** | Saved addresses for one-tap checkout |
+| **My Offers** | Every coupon you can use right now, with the code ready to copy |
 | **Gift cards** | Cards you have bought |
-| **Settings** | Your details, allergies, marketing preferences, password |
+| **Settings** | Your details, allergies, marketing preferences, password, notifications |
 
 Allergies saved in **Settings** are flagged on every order ticket automatically.
+
+**My Offers** only shows codes that will actually work for you — if an offer is one per
+customer and you have used it, it moves to "Already used" rather than failing at
+checkout.
+
+### If you forget your password
+
+Click **Forgot your password?** on the sign-in page and enter your email. We send a link
+that works once and expires after an hour. Setting a new password signs you out
+everywhere else, so if somebody else had got into your account, they are now out.
+
+For your security we give the same answer whether or not an account exists for that
+address — so if nothing arrives, check your spam folder first, then call us.
+
+### Verifying your email
+
+When you register we send a confirmation link. Until you click it we cannot reliably send
+you receipts or booking confirmations. If you missed it, go to **Settings → Notifications**
+and press **Resend link**.
+
+### Notifications
+
+In **Settings → Notifications** you can turn on **push notifications** and get an alert
+the moment your order is confirmed, cooked and on its way — no need to keep the tracking
+page open. Turn them off again in the same place at any time.
 
 ---
 
@@ -145,7 +185,11 @@ of any bill.
 **/gift-cards** — any amount from Rs. 1,000 to Rs. 100,000.
 
 Delivered by email with a unique code and your personal message. Valid 12 months,
-redeemable on dine-in, delivery and pickup. Unused balance stays on the card.
+redeemable on dine-in, delivery and pickup.
+
+**Using one.** Paste the code into the **Gift card** box at checkout. We show the balance
+before you commit, take only what the bill needs, and leave the rest on the card for next
+time. If the card covers the whole bill there is nothing left to pay.
 
 ---
 

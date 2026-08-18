@@ -66,6 +66,26 @@ the timeline stays honest.
 After that they must call, and you cancel it here. Any loyalty points they redeemed are
 returned to them automatically.
 
+### Refunds
+
+Managers and above see a **Refund** button on any order that has been paid.
+
+- Leave the amount empty to refund everything still outstanding, or type a figure for a
+  partial refund. The form will not let you refund more than the order is worth, and the
+  API checks again — a stale screen cannot over-refund.
+- Always write a reason. It goes into the email the customer receives and into the order
+  timeline, so the next person to look at this order knows what happened.
+- **Card orders** go back through the original payment automatically; the money reaches
+  the customer in 5–10 working days.
+- **Cash and wallet orders** show an amber "return the cash by hand" note. The system
+  records the refund, but somebody physically has to give the money back — enter it in
+  the day book.
+- Loyalty is corrected for you: points earned on the refunded portion are removed, and
+  on a full refund any points the customer spent are returned.
+
+You can refund the same order more than once until it is fully refunded. The button then
+changes to "Fully refunded" and stops accepting more.
+
 ---
 
 ## Reservations
@@ -77,6 +97,21 @@ and the percentage of the 260-cover floor plan committed.
 
 The **month strip** shows every day at a glance — darker red means busier. Click a day
 to jump to it.
+
+### Approving bookings
+
+Unless auto-approval is switched on (Settings → Service), every online booking arrives as
+**Awaiting approval**. A table is held for it, but the guest has been told only that we
+have their request.
+
+- **Approve** confirms it and emails the guest. The system picks the best-fitting free
+  table; if you want a specific one, approve from the booking and choose it.
+- **Reject** releases the table and emails the guest your reason. Write a real sentence —
+  they will read it. "We are fully committed at that time" is fine; leaving it blank is
+  not, because the guest is left guessing.
+
+Once a booking has been decided it cannot be decided again. If you approve by mistake,
+cancel the booking instead, which frees the table and promotes anyone waiting.
 
 For each booking:
 
@@ -111,6 +146,62 @@ Prices are in whole rupees, excluding tax. Tax is added at checkout.
 
 Deleting a dish is permanent and removes it from the menu, but past orders keep their
 record of what was sold.
+
+---
+
+## Categories
+
+**/admin/categories** — managers and above.
+
+Categories are the sections of the menu. The order here is the order guests see, so put
+the things you want to sell first at the top: use the **up and down arrows** beside each
+one.
+
+- **Hide** takes a whole section off the site without deleting anything. Useful for a
+  seasonal menu you will bring back.
+- **Delete** is refused while the category still holds dishes — otherwise deleting
+  "Biryani" would take thirty-nine dishes and their order history with it. Move or delete
+  the dishes first.
+
+---
+
+## Reviews
+
+**/admin/reviews** — all staff can read; managers can act.
+
+**Nothing a customer writes appears on the site until somebody approves it here.** The
+page opens on the pending queue.
+
+- **Approve** publishes it.
+- **Hide** takes a published review back down without deleting it.
+- **Reply** publishes an owner response underneath the review, and notifies the guest.
+  Reply to every review below four stars. Thank them by name, address the specific thing
+  they raised, and say what you have changed. A well-handled bad review reads better to a
+  new customer than a page of five stars.
+- **Delete** is permanent — use it only for spam or abuse, never for criticism.
+
+The panel at the top shows the overall average, the distribution across one to five
+stars, and the last thirty days separately. Watch the 30-day figure rather than the
+lifetime average: it moves fast enough to tell you something.
+
+---
+
+## Settings
+
+**/admin/settings** — managers and above. Changes take effect within a minute; nobody
+needs to redeploy anything.
+
+| Switch | When to use it |
+| --- | --- |
+| **Accepting online orders** | Turn off when the kitchen is overwhelmed or you have closed early. The site immediately stops taking orders. A red banner reminds you it is off. |
+| **Accepting reservations** | Closes the online booking form. Phone bookings and walk-ins are unaffected. |
+| **Auto-approve reservations** | Leave **off** if you want to see every booking before it is confirmed. Turn on only during quiet periods. |
+| **Delivery / Pickup** | Withdraw either option at checkout — for example, delivery during a storm. |
+| **Kitchen prep time** | Added to every delivery estimate. Raise it on a busy Friday so the quoted time is honest. |
+| **Site announcement** | A banner across the whole site. Use it for Eid hours or a road closure. Clear it when it stops being true. |
+
+**Clear cache** forces the site to rebuild its menu on the next request. Use it if you
+have changed a dish and the site still shows the old version after a minute.
 
 ---
 

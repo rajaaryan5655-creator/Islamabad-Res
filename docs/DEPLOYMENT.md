@@ -108,8 +108,36 @@ STRIPE_SECRET_KEY="sk_live_…"
 STRIPE_WEBHOOK_SECRET="whsec_…"
 PAYPAL_CLIENT_ID="…"
 PAYPAL_SECRET="…"
+
+# Transactional email. Without SMTP_URL the mailer logs and records every
+# message instead of sending it — the app still works, customers just get
+# nothing. Set this before launch.
+SMTP_URL="smtp://apikey:SG.xxxx@smtp.sendgrid.net:587"
+MAIL_FROM="Islamabad Restaurant <no-reply@islamabadrestaurant.pk>"
+
+# Web Push. Generate once with: npx web-push generate-vapid-keys
+# Leave blank to disable push; subscriptions are still accepted and stored.
+VAPID_PUBLIC_KEY="B…"
+VAPID_PRIVATE_KEY="…"
+VAPID_SUBJECT="mailto:support@islamabadrestaurant.pk"
+
 SENTRY_DSN="https://…@sentry.io/…"
 ```
+
+### Email deliverability
+
+Transactional mail from a restaurant lands in spam unless the domain is authenticated.
+Before go-live, publish these DNS records for `islamabadrestaurant.pk`:
+
+| Record | Purpose |
+| --- | --- |
+| SPF (`TXT`) | `v=spf1 include:<provider> ~all` — authorises the sending host |
+| DKIM (`CNAME`/`TXT`) | Provider-supplied key; signs every message |
+| DMARC (`TXT`) | `v=DMARC1; p=quarantine; rua=mailto:dmarc@islamabadrestaurant.pk` |
+
+Send a test through <https://www.mail-tester.com> and aim for 9/10 or better. Verify
+delivery afterwards in **Admin → Settings**, which surfaces the `EmailLog` table: every
+message the platform has attempted, with its status and any provider error.
 
 > The API **refuses to start** in production if the JWT secrets are still the development
 > defaults. Generate real ones with `openssl rand -base64 48`.
@@ -265,8 +293,15 @@ curl https://islamabadrestaurant.pk/robots.txt
 - [ ] JWT secrets are not the defaults
 - [ ] Stripe webhook registered at `https://api.…/api/webhooks/stripe`
 - [ ] `WEB_ORIGIN` lists every production hostname
-- [ ] Place a real Rs. 100 order and refund it
+- [ ] Place a real Rs. 100 order and refund it (check the refund reaches the card)
 - [ ] Make and cancel a reservation
+- [ ] **Approve and reject a booking** — confirm both emails arrive
+- [ ] **Register a test account** — confirm the welcome and verification emails arrive
+- [ ] **Run a password reset end to end** and confirm the old password stops working
+- [ ] **Order a customised dish** and check the kitchen ticket shows the chosen options
+- [ ] **Apply a gift card** and confirm the balance and the amount charged both change
+- [ ] SPF, DKIM and DMARC pass; `EmailLog` shows `SENT`, not `FAILED`
+- [ ] If push is enabled, subscribe in Settings and send yourself a test
 - [ ] Admin sign-in works; change the seeded passwords
 - [ ] Submit the sitemap in Google Search Console
 - [ ] Link the Google Business Profile and confirm the `Restaurant` JSON-LD in the
@@ -276,6 +311,19 @@ curl https://islamabadrestaurant.pk/robots.txt
 ---
 
 ## 11. Operations
+
+**Schema changes** — this platform does not use `prisma migrate`. Edit
+`scripts/schema.models.prisma`, then:
+
+```bash
+npm run generate -w @islamabad/api   # regenerate schema.prisma, SQL and the client
+npm run db:push -w @islamabad/api    # apply to the target database
+```
+
+`db:push` is idempotent and additive: it creates missing tables and indexes, and diffs
+each table's columns against the generated DDL to emit `ALTER TABLE … ADD COLUMN` for
+anything new. It never drops or rewrites a column — destructive changes must be written
+by hand and reviewed. Always take a snapshot first.
 
 **Backups** — RDS automated backups retain 14 days. Take a manual snapshot before every
 schema change:

@@ -94,6 +94,10 @@ Public brand configuration, opening hours and delivery zones. Cached 10 minutes.
 | GET | `/me` | user | Current profile |
 | PATCH | `/me` | user | Update name, phone, dietary prefs, marketing opt-in |
 | POST | `/change-password` | user | Requires the current password; revokes other sessions |
+| POST | `/forgot-password` | — | Emails a reset link; always answers 200 |
+| POST | `/reset-password` | — | Consumes the token, sets the password, revokes all sessions |
+| POST | `/verify-email` | — | Confirms an address from the emailed link |
+| POST | `/resend-verification` | user | Re-sends the verification link |
 | GET | `/addresses` | user | Address book |
 | POST | `/addresses` | user | Add (first one becomes default automatically) |
 | PATCH | `/addresses/:id` | user | Update; setting `isDefault` demotes the previous default |
@@ -114,12 +118,35 @@ Returns `201` with `{ user, accessToken, refreshToken, csrfToken }`.
 Login failures return an identical message for unknown email and wrong password, to
 prevent account enumeration.
 
+**Password reset**
+
+`POST /forgot-password` answers `200` with the same body whether or not the address
+exists — otherwise the endpoint becomes an account-enumeration oracle:
+
+```json
+{ "sent": true, "message": "If an account exists for that address, a reset link is on its way." }
+```
+
+Tokens are stored as a salted SHA-256 hash, are single-use, and expire after **1 hour**
+(reset) or **24 hours** (verification). A completed reset deletes every session for that
+user, so a stolen cookie cannot outlive the password it was issued against.
+
+```json
+POST /reset-password
+{ "token": "<from the emailed link>", "password": "NewPassw0rd" }
+```
+
 ---
 
 ## Menu — `/api/menu`
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
+| GET | `/:id/options` | staff | Option groups for a dish |
+| POST | `/:id/options` | manager | Create an option group with its choices |
+| PATCH | `/options/:groupId` | manager | Update a group; sending `choices` replaces them |
+| DELETE | `/options/:groupId` | manager | Remove a group |
+| PATCH | `/options/choices/:choiceId` | staff | Toggle a single choice's availability |
 | GET | `/categories` | — | Categories with item counts (cached 5 min) |
 | GET | `/` | — | Filtered, sorted, paginated list |
 | GET | `/featured` | — | Best sellers and featured dishes |
@@ -166,10 +193,33 @@ change prices.
 | GET | `/kitchen/queue` | staff | Active tickets, oldest first |
 | PATCH | `/:id/status` | staff | Advance the state machine |
 
+### Dish customization
+
+A cart line may carry chosen options. **Clients send identifiers only** — every price,
+base and surcharge alike, is read from the database at quote and checkout time, so a
+tampered basket cannot change what an order costs.
+
+```json
+{ "menuItemId": "…", "quantity": 2,
+  "options": [{ "groupId": "…", "choiceId": "…" }] }
+```
+
+Validation is enforced server-side, not just in the UI: a missing required group, more
+choices than `maxSelect` allows, a choice belonging to a different group, and a sold-out
+choice each return `400`. The resolved options — label and price delta — are snapshotted
+onto the order line, so later menu edits never rewrite what a customer actually bought.
+
+### Gift cards at checkout
+
+Pass `giftCardCode` to `POST /api/orders`. The balance is drawn down **inside the order
+transaction**, so a checkout that fails never consumes a card. A card covering the whole
+bill settles the order outright (`paymentStatus: "PAID"`, nothing sent to a gateway);
+otherwise the gateway is billed the net amount and the card is left at zero.
+
 **`POST /api/orders/quote`**
 
 ```json
-{ "items": [{ "menuItemId": "…", "quantity": 2 }],
+{ "items": [{ "menuItemId": "…", "quantity": 2, "options": [{ "groupId": "…", "choiceId": "…" }] }],
   "type": "DELIVERY", "zoneId": "zone-f", "couponCode": "WELCOME15", "redeemPoints": 100 }
 ```
 
@@ -206,6 +256,22 @@ credited with their tier multiplier; on `CANCELLED` any redeemed points are refu
 
 ## Reservations — `/api/reservations`
 
+**Approval workflow.** A new booking holds a table but lands as `PENDING`; it is not
+confirmed until a manager decides, unless `autoApproveReservations` is switched on. This
+is what the floor team asked for: a table being free is not the same as the restaurant
+agreeing to seat that party at that time.
+
+```
+POST /api/reservations/:id/decision      (staff)
+{ "decision": "APPROVE", "tableId": "optional-explicit-table" }
+{ "decision": "REJECT",  "reason": "We are fully committed at that time." }
+```
+
+Approving re-runs allocation (or validates an explicitly chosen table for capacity and
+clashes); rejecting releases the held table. Both email the guest and push to their
+devices. A booking that has already been decided returns `400`.
+
+
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
 | GET | `/availability` | — | Live slots for a date and party size |
@@ -239,6 +305,18 @@ position, and cancellation of a conflicting booking promotes it automatically.
 
 | Method | Path | Description |
 | --- | --- | --- |
+| GET | `/dashboard` | Summary: recent orders, bookings, points, notifications |
+| GET | `/loyalty` | Balance, tier, ledger, referral code |
+| GET | `/gift-cards` | Cards this customer purchased |
+| GET | `/coupons` | Offers split into `available` and `used`, with eligibility resolved |
+| GET | `/push/key` | Whether push is configured, plus the public VAPID key |
+| POST | `/push/subscribe` | Register a browser subscription |
+| POST | `/push/unsubscribe` | Remove one endpoint, or all for this user |
+| POST | `/push/test` | Send a test notification to this account's devices |
+
+
+| Method | Path | Description |
+| --- | --- | --- |
 | GET | `/dashboard` | Stats, live order, upcoming bookings, notifications, favourites |
 | GET | `/loyalty` | Balance, tier, next tier, full points ledger, referrals |
 | GET | `/gift-cards` | Gift cards this user purchased |
@@ -264,13 +342,56 @@ All endpoints require **staff** or above; individual routes require more.
 | GET/POST/PATCH/DELETE | `/coupons` | manager | Coupon CRUD |
 | GET/PATCH | `/messages` | staff | Contact inbox |
 | GET/PATCH | `/enquiries` | staff | Event enquiry pipeline |
-| GET | `/audit` | super admin | Audit log, most recent 200 |
+| GET | `/categories` | staff | Categories with dish counts |
+| POST | `/categories` | manager | Create (slug is derived and de-duplicated) |
+| PATCH | `/categories/:id` | manager | Update |
+| DELETE | `/categories/:id` | manager | Refuses while the category still holds dishes |
+| POST | `/categories/reorder` | manager | Persist a new display order |
+| GET | `/reviews?status=pending\|approved\|all` | staff | Moderation queue, paginated |
+| GET | `/reviews/analytics` | staff | Average, distribution, 30-day trend |
+| PATCH | `/reviews/:id` | manager | Approve, hide, or publish an owner reply |
+| DELETE | `/reviews/:id` | manager | Delete permanently |
+| POST | `/orders/:id/refund` | manager | Full or partial refund |
+| GET | `/settings` | staff | Operational settings |
+| PATCH | `/settings` | manager | Update settings (takes effect within 60 s) |
+| GET | `/emails` | manager | Delivery log, filterable by `kind` and `status` |
+| GET | `/audit` | super admin | Audit log, paginated, filterable by action and actor |
 | POST | `/cache/flush` | manager | Invalidate menu, analytics and availability caches |
 
 Month-over-month growth compares month-to-date against the **same span** of the previous
 month, so a partial month does not read as a collapse.
 
 Super admins cannot demote their own account (guards against lockout).
+
+**Refunds — `POST /admin/orders/:id/refund`**
+
+```json
+{ "amount": 500, "reason": "Biryani arrived cold" }
+```
+
+Omit `amount` to refund the whole remaining balance. Card orders are refunded through
+the original Stripe payment intent, keyed for idempotency on the running refund total so
+a retried request cannot double-refund. Cash and wallet orders return `manual: true`,
+meaning the money must be handed back by hand. Either way one transaction updates the
+order, the payment row, the timeline, and the customer's loyalty points — earned points
+are clawed back in proportion to the refunded amount, and redeemed points are returned in
+full on a complete refund. The customer is emailed automatically.
+
+```json
+{ "refund": { "refunded": 500, "totalRefunded": 500, "method": "CARD",
+              "reference": "re_1abc", "manual": false } }
+```
+
+**Settings — `PATCH /admin/settings`**
+
+| Key | Effect |
+| --- | --- |
+| `acceptingOrders` | Master switch for online ordering |
+| `acceptingReservations` | Closes the online booking form |
+| `autoApproveReservations` | When false, bookings wait for a manager decision |
+| `deliveryEnabled` / `pickupEnabled` | Offer each fulfilment type at checkout |
+| `prepTimeMinutes` | Added to every delivery estimate (5–180) |
+| `announcement` | Site-wide banner; empty string hides it |
 
 ---
 
@@ -284,7 +405,7 @@ Super admins cannot demote their own account (guards against lockout).
 | GET | `/offers` | — | Live, publishable coupons |
 | POST | `/gift-cards` | optional | Purchase; 12-month validity |
 | GET | `/gift-cards/:code` | — | Check a balance |
-| POST | `/gift-cards/:code/redeem` | user | Redeem against a bill |
+| POST | `/gift-cards/:code/redeem` | user | Redeem a balance manually |
 | POST | `/events/enquiry` | — | Private dining / catering enquiry |
 | GET | `/reviews` | — | Approved reviews |
 | POST | `/reviews` | user | Submit; dish reviews require a delivered order |
