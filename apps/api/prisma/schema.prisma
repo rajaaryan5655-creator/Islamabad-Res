@@ -311,6 +311,23 @@ model Reservation {
 
 /* ------------------------------- marketing ------------------------------- */
 
+model CouponRedemption {
+  id        String   @id @default(cuid())
+  couponId  String
+  userId    String?
+  /** Lowercased email — the only stable identity a guest checkout gives us. */
+  email     String?
+  phone     String?
+  orderId   String   @unique
+  createdAt DateTime @default(now())
+
+  coupon Coupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+
+  @@index([couponId, userId])
+  @@index([couponId, email])
+  @@index([couponId, phone])
+}
+
 model Coupon {
   id          String   @id @default(cuid())
   code        String   @unique
@@ -327,6 +344,8 @@ model Coupon {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  redemptions CouponRedemption[]
 
   @@index([isActive])
 }

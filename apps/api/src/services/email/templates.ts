@@ -166,7 +166,7 @@ export function passwordResetEmail(input: { name: string; resetUrl: string }): R
 export function orderConfirmationEmail(input: {
   name: string;
   orderNumber: string;
-  items: { name: string; quantity: number; total: number; notes?: string | null }[];
+  items: { name: string; quantity: number; total: number; notes?: string | null; options?: string[] }[];
   subtotal: number;
   discount: number;
   pointsDiscount: number;
@@ -186,6 +186,7 @@ export function orderConfirmationEmail(input: {
       <tr>
         <td style="padding:9px 0;border-bottom:1px solid ${C.border};font-family:Helvetica,Arial,sans-serif;font-size:14px;color:${C.text};">
           <strong style="color:${C.muted};">${i.quantity}×</strong> ${escapeHtml(i.name)}
+          ${i.options?.length ? `<br><span style="font-size:12px;color:${C.muted};">${escapeHtml(i.options.join(' · '))}</span>` : ''}
           ${i.notes ? `<br><span style="font-size:12px;font-style:italic;color:${C.muted};">“${escapeHtml(i.notes)}”</span>` : ''}
         </td>
         <td align="right" style="padding:9px 0;border-bottom:1px solid ${C.border};font-family:Helvetica,Arial,sans-serif;font-size:14px;color:${C.text};white-space:nowrap;">${formatPKR(i.total)}</td>

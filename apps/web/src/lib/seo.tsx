@@ -26,6 +26,7 @@ export function buildMetadata({
   image = '/images/hero-main.jpg',
   keywords = [],
   type = 'website',
+  noIndex = false,
 }: {
   title: string;
   description: string;
@@ -33,6 +34,8 @@ export function buildMetadata({
   image?: string;
   keywords?: string[];
   type?: 'website' | 'article';
+  /** Transactional pages (reset links, dashboards) must stay out of the index. */
+  noIndex?: boolean;
 }): Metadata {
   const url = `${SITE_URL}${path}`;
   const fullTitle = path === '' ? title : `${title} | ${BRAND.name}`;
@@ -57,11 +60,13 @@ export function buildMetadata({
       description,
       images: [`${SITE_URL}${image}`],
     },
-    robots: {
-      index: true,
-      follow: true,
-      googleBot: { index: true, follow: true, 'max-image-preview': 'large', 'max-snippet': -1 },
-    },
+    robots: noIndex
+      ? { index: false, follow: false, googleBot: { index: false, follow: false } }
+      : {
+          index: true,
+          follow: true,
+          googleBot: { index: true, follow: true, 'max-image-preview': 'large', 'max-snippet': -1 },
+        },
   };
 }
 

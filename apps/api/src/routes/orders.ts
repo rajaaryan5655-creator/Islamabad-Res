@@ -14,7 +14,14 @@ import {
   validated,
   param,
 } from '../middleware/index.js';
-import { buildLines, createOrder, resolveCoupon, toCouponLike, transitionOrder } from '../services/orders.js';
+import {
+  buildLines,
+  createOrder,
+  resolveCoupon,
+  toCouponLike,
+  transitionOrder,
+  type CartLineInput,
+} from '../services/orders.js';
 import { createPaymentIntent } from '../services/payments.js';
 import { audit } from '../services/audit.js';
 import { parseOptions } from '../lib/json.js';
@@ -35,16 +42,24 @@ orderRouter.post(
       zoneId?: string;
       couponCode?: string;
       redeemPoints?: number;
+      customerEmail?: string;
+      customerPhone?: string;
     };
     if (!Array.isArray(body.items) || body.items.length === 0) {
       throw badRequest('Your cart is empty');
     }
 
-    const lines = await buildLines(body.items);
+    const lines = await buildLines(body.items as CartLineInput[]);
     let coupon = null;
     let couponError: string | null = null;
     try {
-      coupon = await resolveCoupon(body.couponCode, req.user?.sub ?? null);
+      // Quote with the same identity checkout will use, so a guest sees the
+      // "already used" message before reaching the payment step.
+      coupon = await resolveCoupon(body.couponCode, {
+        userId: req.user?.sub ?? null,
+        email: body.customerEmail,
+        phone: body.customerPhone,
+      });
     } catch (err) {
       couponError = (err as Error).message;
     }

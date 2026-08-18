@@ -11,9 +11,30 @@ import { prisma } from '../lib/prisma.js';
 import { badRequest, conflict, notFound } from '../middleware/index.js';
 import { orderNumber, trackingToken } from '../lib/auth.js';
 import { cache } from '../lib/cache.js';
+import { env } from '../lib/env.js';
+import { parseOptions } from '../lib/json.js';
+import { sendPush } from './push.js';
+import { queueEmail, orderConfirmationEmail } from './email/index.js';
 
-/** Resolves a coupon and validates it against the customer + basket. */
-export async function resolveCoupon(code: string | undefined | null, userId?: string | null) {
+/** Identity used to enforce `perUserLimit`, including for guest checkouts. */
+export interface CouponIdentity {
+  userId?: string | null;
+  email?: string | null;
+  phone?: string | null;
+}
+
+/**
+ * Resolves a coupon and validates it against the customer and basket.
+ *
+ * `perUserLimit` used to be unenforceable for guests, because a guest has no
+ * user id — a one-per-customer code could be reused indefinitely by simply not
+ * signing in. Redemptions are now recorded against whichever identifiers we
+ * have (account, email, phone), and any match counts against the limit.
+ */
+export async function resolveCoupon(
+  code: string | undefined | null,
+  identity?: CouponIdentity | string | null,
+) {
   if (!code) return null;
   const coupon = await prisma.coupon.findUnique({ where: { code: code.trim().toUpperCase() } });
   if (!coupon) throw badRequest('That coupon code is not valid');
@@ -23,13 +44,35 @@ export async function resolveCoupon(code: string | undefined | null, userId?: st
   if (coupon.expiresAt && coupon.expiresAt < now) throw badRequest('That coupon has expired');
   if (coupon.usageLimit && coupon.usageCount >= coupon.usageLimit) throw badRequest('That coupon has been fully redeemed');
 
-  if (coupon.perUserLimit && userId) {
-    const used = await prisma.order.count({
-      where: { userId, couponCode: coupon.code, status: { not: 'CANCELLED' } },
-    });
-    if (used >= coupon.perUserLimit) throw badRequest('You have already used that coupon');
+  // Callers may pass a bare userId (the original signature) or a full identity.
+  const who: CouponIdentity =
+    typeof identity === 'string' || identity === null || identity === undefined
+      ? { userId: identity ?? null }
+      : identity;
+
+  if (coupon.perUserLimit) {
+    const matches: Record<string, unknown>[] = [];
+    if (who.userId) matches.push({ userId: who.userId });
+    if (who.email) matches.push({ email: who.email.trim().toLowerCase() });
+    if (who.phone) matches.push({ phone: normalisePhone(who.phone) });
+
+    if (matches.length > 0) {
+      const used = await prisma.couponRedemption.count({
+        where: { couponId: coupon.id, OR: matches },
+      });
+      if (used >= coupon.perUserLimit) throw badRequest('You have already used that coupon');
+    }
   }
+
   return coupon;
+}
+
+/** Pakistani numbers are written many ways; compare them in one canonical form. */
+export function normalisePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  if (digits.startsWith('92')) return `0${digits.slice(2)}`;
+  if (digits.startsWith('0')) return digits;
+  return `0${digits}`;
 }
 
 export function toCouponLike(coupon: { code: string; type: string; value: number; minOrder: number; maxDiscount: number | null } | null): CouponLike | null {
@@ -149,7 +192,11 @@ export interface CreateOrderArgs {
 
 export async function createOrder({ input, userId }: CreateOrderArgs) {
   const lines = await buildLines(input.items);
-  const coupon = await resolveCoupon(input.couponCode, userId);
+  const coupon = await resolveCoupon(input.couponCode, {
+    userId,
+    email: input.customerEmail,
+    phone: input.customerPhone,
+  });
 
   const user = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
   const availablePoints = user?.points ?? 0;
@@ -230,6 +277,17 @@ export async function createOrder({ input, userId }: CreateOrderArgs) {
 
     if (coupon) {
       await tx.coupon.update({ where: { id: coupon.id }, data: { usageCount: { increment: 1 } } });
+      // Recorded against every identifier we hold, so the per-user limit
+      // survives a guest checkout.
+      await tx.couponRedemption.create({
+        data: {
+          couponId: coupon.id,
+          orderId: created.id,
+          userId,
+          email: input.customerEmail?.trim().toLowerCase() || null,
+          phone: normalisePhone(input.customerPhone),
+        },
+      });
     }
 
     // Spend redeemed points immediately; award earned points on delivery.
@@ -346,6 +404,60 @@ export async function transitionOrder(
 
     return result;
   });
+
+  /**
+   * Side channels fire after the transaction commits, so a push or SMTP
+   * failure can never roll back a status the kitchen has already acted on.
+   */
+  const copy: Record<string, string> = {
+    CONFIRMED: 'We have confirmed your order and sent it to the kitchen.',
+    PREPARING: 'Your food is on the fire.',
+    READY: 'Your order is packed and ready.',
+    OUT_FOR_DELIVERY: 'Your rider has left the kitchen.',
+    DELIVERED: 'Delivered. Thank you — points have been added to your account.',
+    CANCELLED: 'Your order has been cancelled.',
+  };
+
+  if (order.userId && copy[next]) {
+    void sendPush(order.userId, {
+      title: `Order ${order.orderNumber}`,
+      body: copy[next]!,
+      url: `/track/${order.trackingToken}`,
+      tag: `order-${order.id}`,
+    });
+  }
+
+  // The confirmation email carries the full receipt; later statuses are a
+  // push/in-app concern, and emailing every step would be spam.
+  if (next === 'CONFIRMED' && order.customerEmail) {
+    queueEmail({
+      to: order.customerEmail,
+      kind: 'order-confirmation',
+      userId: order.userId,
+      email: orderConfirmationEmail({
+        name: order.customerName,
+        orderNumber: order.orderNumber,
+        items: order.items.map((i) => ({
+          name: i.name,
+          quantity: i.quantity,
+          total: i.total,
+          options: parseOptions(i.options).map((o) => o.label),
+        })),
+        subtotal: order.subtotal,
+        deliveryFee: order.deliveryFee,
+        packaging: order.packaging,
+        discount: order.discount,
+        pointsDiscount: order.pointsDiscount,
+        tax: order.tax,
+        total: order.total,
+        type: order.type,
+        addressText: order.addressText,
+        etaMinutes: order.etaMinutes,
+        pointsEarned: order.pointsEarned,
+        trackingUrl: `${env.WEB_ORIGIN.replace(/\/$/, '')}/track/${order.trackingToken}`,
+      }),
+    });
+  }
 
   await cache.delPrefix('analytics:');
   return updated;

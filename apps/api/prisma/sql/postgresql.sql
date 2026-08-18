@@ -261,6 +261,22 @@ CREATE INDEX IF NOT EXISTS "Reservation_date_time_idx" ON "Reservation"("date", 
 CREATE INDEX IF NOT EXISTS "Reservation_status_idx" ON "Reservation"("status");
 CREATE INDEX IF NOT EXISTS "Reservation_userId_idx" ON "Reservation"("userId");
 
+CREATE TABLE IF NOT EXISTS "CouponRedemption" (
+  "id" TEXT PRIMARY KEY,
+  "couponId" TEXT NOT NULL,
+  "userId" TEXT,
+  "email" TEXT,
+  "phone" TEXT,
+  "orderId" TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ(3) NOT NULL,
+  FOREIGN KEY ("couponId") REFERENCES "Coupon"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "CouponRedemption_orderId_key" ON "CouponRedemption"("orderId");
+CREATE INDEX IF NOT EXISTS "CouponRedemption_couponId_userId_idx" ON "CouponRedemption"("couponId", "userId");
+CREATE INDEX IF NOT EXISTS "CouponRedemption_couponId_email_idx" ON "CouponRedemption"("couponId", "email");
+CREATE INDEX IF NOT EXISTS "CouponRedemption_couponId_phone_idx" ON "CouponRedemption"("couponId", "phone");
+
 CREATE TABLE IF NOT EXISTS "Coupon" (
   "id" TEXT PRIMARY KEY,
   "code" TEXT NOT NULL,

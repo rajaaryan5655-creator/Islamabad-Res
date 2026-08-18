@@ -129,6 +129,14 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
           hint={mode === 'register' ? 'At least 8 characters, with an uppercase letter and a number' : undefined}
         />
 
+        {mode === 'login' && (
+          <div className="-mt-1 text-right">
+            <Link href="/forgot-password" className="text-sm text-black/55 underline-offset-2 hover:text-ember-500 hover:underline">
+              Forgot your password?
+            </Link>
+          </div>
+        )}
+
         <Button type="submit" variant="primary" size="lg" className="w-full" loading={loading}>
           {mode === 'login' ? 'Sign In' : 'Create Account'}
         </Button>

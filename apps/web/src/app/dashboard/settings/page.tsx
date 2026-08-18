@@ -9,6 +9,7 @@ import { api, type AuthUser } from '@/lib/api';
 import { useAuth } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/primitives';
+import { NotificationSettings } from '@/components/dashboard/notification-settings';
 import { cn } from '@/lib/utils';
 
 export default function SettingsPage() {
@@ -104,6 +105,8 @@ export default function SettingsPage() {
           Save changes
         </Button>
       </section>
+
+      <NotificationSettings />
 
       {/* password */}
       <section className="rounded-sm border border-black/10 bg-white p-6">

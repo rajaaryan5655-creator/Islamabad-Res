@@ -245,6 +245,7 @@ export interface AuthUser {
   lifetimePoints: number;
   tier: string;
   referralCode: string;
+  emailVerified: boolean;
   marketingOptIn: boolean;
   dietaryPrefs: string[];
   memberSince: string;

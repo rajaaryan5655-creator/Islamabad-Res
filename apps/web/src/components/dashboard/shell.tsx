@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { CalendarDays, Gift, Heart, LayoutDashboard, LogOut, MapPin, Receipt, Settings, Sparkles } from 'lucide-react';
+import { CalendarDays, Gift, Heart, LayoutDashboard, LogOut, MapPin, Receipt, Settings, Sparkles, TicketPercent } from 'lucide-react';
 import { useAuth } from '@/store/auth';
 import { Spinner } from '@/components/ui/primitives';
 import { cn, initials } from '@/lib/utils';
@@ -13,6 +13,7 @@ const LINKS = [
   { href: '/dashboard/orders', label: 'Orders', Icon: Receipt },
   { href: '/dashboard/reservations', label: 'Reservations', Icon: CalendarDays },
   { href: '/dashboard/loyalty', label: 'Loyalty', Icon: Sparkles },
+  { href: '/dashboard/coupons', label: 'My Offers', Icon: TicketPercent },
   { href: '/dashboard/addresses', label: 'Addresses', Icon: MapPin },
   { href: '/dashboard/gift-cards', label: 'Gift Cards', Icon: Gift },
   { href: '/dashboard/settings', label: 'Settings', Icon: Settings },
