@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, CreditCard, Loader2, Lock, ShieldCheck, Sparkles, Tag, Wallet } from 'lucide-react';
+import { Check, CreditCard, Gift, Loader2, Lock, ShieldCheck, Sparkles, Tag, Wallet } from 'lucide-react';
 import { DELIVERY_ZONES, PAYMENT_METHOD_META, POINT_VALUE, checkoutSchema } from '@islamabad/shared';
 import { ApiError, api, type Order, type Quote } from '@/lib/api';
 import { useCart , lineTotal } from '@/store/cart';
@@ -31,6 +31,9 @@ export function CheckoutForm() {
   const [form, setForm] = useState({ name: '', phone: '', email: '', address: '', notes: '', tableNumber: '' });
   const [paymentMethod, setPaymentMethod] = useState('COD');
   const [couponInput, setCouponInput] = useState(couponCode ?? '');
+  const [giftCardInput, setGiftCardInput] = useState('');
+  const [giftCard, setGiftCard] = useState<{ code: string; balance: number } | null>(null);
+  const [checkingGiftCard, setCheckingGiftCard] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [addressId, setAddressId] = useState<string>('');
@@ -81,6 +84,29 @@ export function CheckoutForm() {
     if (code) toast.info(`Checking ${code}…`);
   }
 
+  /** Checks the balance before checkout so the customer sees it up front. */
+  async function applyGiftCard() {
+    const code = giftCardInput.trim().toUpperCase();
+    if (!code) return;
+
+    setCheckingGiftCard(true);
+    try {
+      const res = await api.get<{ giftCard: { code: string; balance: number; status: string } }>(
+        `/api/marketing/gift-cards/${encodeURIComponent(code)}`,
+      );
+      if (res.giftCard.status !== 'ACTIVE' || res.giftCard.balance <= 0) {
+        toast.error('That gift card has no balance left.');
+        return;
+      }
+      setGiftCard({ code: res.giftCard.code, balance: res.giftCard.balance });
+      toast.success(`${formatPKR(res.giftCard.balance)} gift card applied`);
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setCheckingGiftCard(false);
+    }
+  }
+
   useEffect(() => {
     if (quote?.couponError) toast.error(quote.couponError);
     else if (quote?.couponCode) toast.success(`${quote.couponCode} applied`);
@@ -103,6 +129,7 @@ export function CheckoutForm() {
       zoneId: type === 'DELIVERY' ? zoneId ?? undefined : undefined,
       paymentMethod,
       couponCode: couponCode || undefined,
+      giftCardCode: giftCard?.code || undefined,
       redeemPoints: redeemPoints || undefined,
       notes: form.notes || undefined,
       tableNumber: type === 'DINE_IN' ? form.tableNumber || undefined : undefined,
@@ -379,6 +406,51 @@ export function CheckoutForm() {
             </div>
           </div>
 
+          {/* gift card */}
+          <div className="mb-4">
+            <label htmlFor="gift-card" className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.15em] text-black/60">
+              <Gift className="size-3.5" /> Gift card
+            </label>
+            {giftCard ? (
+              <div className="flex items-center justify-between gap-3 rounded-sm border border-emerald-600/30 bg-emerald-50 px-3.5 py-2.5 text-sm">
+                <span>
+                  <span className="font-mono font-semibold">{giftCard.code}</span>
+                  <span className="ml-2 text-black/55">{formatPKR(giftCard.balance)} available</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGiftCard(null);
+                    setGiftCardInput('');
+                  }}
+                  className="text-xs text-black/50 underline-offset-2 hover:text-ember-500 hover:underline"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  id="gift-card"
+                  value={giftCardInput}
+                  onChange={(e) => setGiftCardInput(e.target.value.toUpperCase())}
+                  placeholder="GIFT-XXXX-XXXX-XXXX"
+                  className="h-11 flex-1 rounded-sm border border-black/12 px-3 text-sm uppercase outline-none focus:border-saffron-400"
+                />
+                <Button
+                  type="button"
+                  variant="dark"
+                  size="sm"
+                  className="shrink-0"
+                  loading={checkingGiftCard}
+                  onClick={applyGiftCard}
+                >
+                  Apply
+                </Button>
+              </div>
+            )}
+          </div>
+
           {/* loyalty */}
           {user && user.points > 0 && maxRedeemable > 0 && (
             <div className="mb-4 rounded-sm bg-saffron-100 p-3.5">
@@ -440,10 +512,20 @@ export function CheckoutForm() {
               <dt>Sales tax (16%)</dt>
               <dd className="tabular-nums">{formatPKR(quote?.tax ?? 0)}</dd>
             </div>
+            {giftCard && quote && (
+              <div className="flex justify-between text-emerald-700">
+                <dt>Gift card {giftCard.code}</dt>
+                <dd className="tabular-nums">−{formatPKR(Math.min(giftCard.balance, quote.total))}</dd>
+              </div>
+            )}
             <div className="flex justify-between border-t border-black/10 pt-2.5 font-display text-2xl">
-              <dt>Total</dt>
+              <dt>{giftCard ? 'Left to pay' : 'Total'}</dt>
               <dd className="tabular-nums text-ember-500">
-                {quoting ? <Loader2 className="size-5 animate-spin" /> : formatPKR(quote?.total ?? 0)}
+                {quoting ? (
+                  <Loader2 className="size-5 animate-spin" />
+                ) : (
+                  formatPKR(Math.max(0, (quote?.total ?? 0) - (giftCard ? Math.min(giftCard.balance, quote?.total ?? 0) : 0)))
+                )}
               </dd>
             </div>
           </dl>

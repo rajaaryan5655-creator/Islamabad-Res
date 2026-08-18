@@ -257,16 +257,51 @@ adminRouter.get(
   '/customers/:id',
   requireManager,
   asyncHandler(async (req, res) => {
+    // An explicit select, not include: a bare include returns every scalar on
+    // User — passwordHash among them — straight to the browser.
     const customer = await prisma.user.findUniqueOrThrow({
       where: { id: param(req, 'id') },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        role: true,
+        avatarUrl: true,
+        tier: true,
+        points: true,
+        lifetimePoints: true,
+        referralCode: true,
+        emailVerified: true,
+        marketingOptIn: true,
+        isActive: true,
+        createdAt: true,
+        lastLoginAt: true,
         orders: { orderBy: { createdAt: 'desc' }, take: 20, include: { items: true } },
         reservations: { orderBy: { date: 'desc' }, take: 20 },
         addresses: true,
         pointsLedger: { orderBy: { createdAt: 'desc' }, take: 20 },
       },
     });
-    res.json({ customer });
+
+    const [spend, referrals] = await Promise.all([
+      prisma.order.aggregate({
+        where: { userId: customer.id, status: { not: 'CANCELLED' } },
+        _sum: { total: true },
+        _count: { _all: true },
+      }),
+      prisma.user.count({ where: { referredById: customer.id } }),
+    ]);
+
+    res.json({
+      customer,
+      stats: {
+        totalSpend: spend._sum.total ?? 0,
+        orderCount: spend._count._all,
+        averageOrder: spend._count._all ? Math.round((spend._sum.total ?? 0) / spend._count._all) : 0,
+        referrals,
+      },
+    });
   }),
 );
 

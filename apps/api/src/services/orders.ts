@@ -185,6 +185,24 @@ export async function buildLines(items: CartLineInput[]): Promise<OrderLine[]> {
   return lines;
 }
 
+/**
+ * Validates a gift card and works out how much of it this order can consume.
+ * The card is only debited inside the order transaction, so a failed checkout
+ * never eats someone's balance.
+ */
+export async function resolveGiftCard(code: string | undefined | null, dueAfterDiscounts: number) {
+  if (!code) return null;
+
+  const card = await prisma.giftCard.findUnique({ where: { code: code.trim().toUpperCase() } });
+  if (!card) throw badRequest('No gift card found with that code');
+  if (card.status !== 'ACTIVE') throw badRequest('That gift card is no longer active');
+  if (card.expiresAt < new Date()) throw badRequest('That gift card has expired');
+  if (card.balance <= 0) throw badRequest('That gift card has no balance left');
+
+  // Never draw more than the bill: the remainder stays on the card.
+  return { card, amount: Math.min(card.balance, dueAfterDiscounts) };
+}
+
 export interface CreateOrderArgs {
   input: CheckoutInput;
   userId: string | null;
@@ -221,6 +239,10 @@ export async function createOrder({ input, userId }: CreateOrderArgs) {
 
   if (quote.couponError) throw badRequest(quote.couponError);
 
+  const gift = await resolveGiftCard(input.giftCardCode, quote.total);
+  const giftAmount = gift?.amount ?? 0;
+  const payable = quote.total - giftAmount;
+
   const order = await prisma.$transaction(async (tx) => {
     const created = await tx.order.create({
       data: {
@@ -247,8 +269,11 @@ export async function createOrder({ input, userId }: CreateOrderArgs) {
         total: quote.total,
         pointsEarned: quote.pointsEarned,
         couponCode: quote.couponCode,
+        giftCardCode: gift?.card.code ?? null,
+        giftCardAmount: giftAmount,
         paymentMethod: input.paymentMethod,
-        paymentStatus: input.paymentMethod === 'COD' ? 'UNPAID' : 'UNPAID',
+        // A gift card covering the full amount settles the order outright.
+        paymentStatus: payable === 0 ? 'PAID' : 'UNPAID',
         etaMinutes: quote.etaMinutes,
         scheduledFor: input.scheduledFor ? new Date(input.scheduledFor) : null,
         items: {
@@ -267,13 +292,29 @@ export async function createOrder({ input, userId }: CreateOrderArgs) {
           create: {
             provider: input.paymentMethod === 'CARD_STRIPE' ? 'stripe' : input.paymentMethod === 'PAYPAL' ? 'paypal' : input.paymentMethod.toLowerCase(),
             method: input.paymentMethod,
-            status: 'UNPAID',
-            amount: quote.total,
+            // A gift card that covers the whole bill leaves nothing to collect.
+            status: payable === 0 ? 'PAID' : 'UNPAID',
+            amount: payable,
           },
         },
       },
       include: { items: true, events: true, payment: true },
     });
+
+    if (gift) {
+      const balance = gift.card.balance - giftAmount;
+      await tx.giftCard.update({
+        where: { id: gift.card.id },
+        data: { balance, status: balance === 0 ? 'REDEEMED' : 'ACTIVE' },
+      });
+      await tx.orderEvent.create({
+        data: {
+          orderId: created.id,
+          status: 'PENDING',
+          note: `Gift card ${gift.card.code} applied — ${giftAmount} paid, ${balance} remaining`,
+        },
+      });
+    }
 
     if (coupon) {
       await tx.coupon.update({ where: { id: coupon.id }, data: { usageCount: { increment: 1 } } });

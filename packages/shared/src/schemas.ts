@@ -184,6 +184,8 @@ export const checkoutSchema = z
     redeemPoints: z.number().int().min(0).optional(),
     notes: z.string().trim().max(400).optional().or(z.literal('')),
     tableNumber: z.string().max(12).optional(),
+    /** Gift card applied at checkout; the balance is drawn down server-side. */
+    giftCardCode: z.string().trim().max(24).optional().or(z.literal('')),
   })
   // A saved address already carries its delivery zone, so `addressId` alone is
   // sufficient; a one-off address must be accompanied by an explicit zone.

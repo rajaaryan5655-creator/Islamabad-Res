@@ -148,6 +148,8 @@ CREATE TABLE IF NOT EXISTS "Order" (
   "total" INTEGER NOT NULL,
   "pointsEarned" INTEGER NOT NULL DEFAULT 0,
   "couponCode" TEXT,
+  "giftCardCode" TEXT,
+  "giftCardAmount" INTEGER NOT NULL DEFAULT 0,
   "paymentMethod" TEXT NOT NULL,
   "paymentStatus" TEXT NOT NULL DEFAULT 'UNPAID',
   "paymentRef" TEXT,

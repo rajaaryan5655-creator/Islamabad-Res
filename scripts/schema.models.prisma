@@ -171,6 +171,8 @@ model Order {
   total          Int
   pointsEarned   Int      @default(0)
   couponCode     String?
+  giftCardCode   String?
+  giftCardAmount Int      @default(0)
   paymentMethod  String
   paymentStatus  String   @default("UNPAID")
   paymentRef     String?

@@ -31,20 +31,39 @@ type OrderLike = {
   paymentMethod: string;
   customerEmail: string | null;
   customerName: string;
+  giftCardAmount?: number;
 };
 
 export async function createPaymentIntent(order: OrderLike): Promise<PaymentIntentResult> {
+  // A gift card can settle the bill outright — there is nothing left to charge.
+  const payable = order.total - (order.giftCardAmount ?? 0);
+  if (payable <= 0) {
+    return {
+      provider: 'gift-card',
+      status: 'succeeded',
+      intentId: `gift_${order.id}`,
+      amount: 0,
+      currency: 'PKR',
+      sandbox: false,
+      instructions: 'Paid in full with your gift card. Nothing further to pay.',
+    };
+  }
+
+  // Downstream gateways charge `total`, so hand them the net amount after any
+  // gift card has been applied.
+  const net = { ...order, total: payable };
+
   switch (order.paymentMethod) {
     case 'CARD_STRIPE':
-      return stripeIntent(order);
+      return stripeIntent(net);
     case 'PAYPAL':
-      return paypalIntent(order);
+      return paypalIntent(net);
     case 'JAZZCASH':
-      return walletIntent(order, 'jazzcash');
+      return walletIntent(net, 'jazzcash');
     case 'EASYPAISA':
-      return walletIntent(order, 'easypaisa');
+      return walletIntent(net, 'easypaisa');
     default:
-      return codIntent(order);
+      return codIntent(net);
   }
 }
 
