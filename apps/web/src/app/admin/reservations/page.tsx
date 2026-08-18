@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { CalendarDays, Users } from 'lucide-react';
+import { CalendarDays, Check, Users, X } from 'lucide-react';
 import { RESERVATION_STATUSES, TOTAL_COVERS } from '@islamabad/shared';
 import { api, type Reservation } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,32 @@ export default function AdminReservationsPage() {
     },
     onError: (err) => toast.error(err.message),
   });
+
+  /**
+   * Approve or reject a request. Both outcomes email the guest, so rejecting
+   * needs a reason the customer will actually read.
+   */
+  const decide = useMutation({
+    mutationFn: ({ id, decision, reason }: { id: string; decision: 'APPROVE' | 'REJECT'; reason?: string }) =>
+      api.post(`/api/reservations/${id}/decision`, { decision, ...(reason ? { reason } : {}) }),
+    onSuccess: (_res, vars) => {
+      toast.success(
+        vars.decision === 'APPROVE' ? 'Booking confirmed — the guest has been emailed' : 'Booking rejected — the guest has been emailed',
+      );
+      void queryClient.invalidateQueries({ queryKey: ['admin-reservations'] });
+      void queryClient.invalidateQueries({ queryKey: ['reservation-calendar'] });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  function reject(r: Reservation) {
+    const reason = window.prompt(
+      `Reject ${r.name}'s booking for ${r.guests} at ${r.time}?\n\nGive a reason — it is included in the email we send them.`,
+      'We are fully committed at that time.',
+    );
+    if (reason === null) return;
+    decide.mutate({ id: r.id, decision: 'REJECT', reason: reason.trim() || undefined });
+  }
 
   const reservations = data?.reservations ?? [];
   const utilisation = data ? Math.round((data.covers / TOTAL_COVERS) * 100) : 0;
@@ -155,12 +181,45 @@ export default function AdminReservationsPage() {
                   <td className="px-4 py-3">{r.guests}</td>
                   <td className="px-4 py-3 text-cream/65">{r.table?.name ?? '—'}</td>
                   <td className="px-4 py-3">
-                    <Badge variant={r.status === 'CONFIRMED' ? 'success' : r.status === 'WAITLIST' ? 'gold' : 'muted'}>
-                      {r.status.toLowerCase()}
+                    <Badge
+                      variant={
+                        r.status === 'CONFIRMED'
+                          ? 'success'
+                          : r.status === 'WAITLIST'
+                            ? 'gold'
+                            : r.status === 'PENDING'
+                              ? 'ember'
+                              : 'muted'
+                      }
+                    >
+                      {r.status === 'PENDING' ? 'awaiting approval' : r.status.toLowerCase().replace('_', ' ')}
                     </Badge>
+                    {r.rejectionReason && <p className="mt-1 text-xs italic text-cream/40">{r.rejectionReason}</p>}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex gap-1.5">
+                    <div className="flex flex-wrap gap-1.5">
+                      {['PENDING', 'WAITLIST'].includes(r.status) && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="gold"
+                            loading={decide.isPending && decide.variables?.id === r.id && decide.variables?.decision === 'APPROVE'}
+                            onClick={() => decide.mutate({ id: r.id, decision: 'APPROVE' })}
+                          >
+                            <Check className="size-3.5" />
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            loading={decide.isPending && decide.variables?.id === r.id && decide.variables?.decision === 'REJECT'}
+                            onClick={() => reject(r)}
+                          >
+                            <X className="size-3.5" />
+                            Reject
+                          </Button>
+                        </>
+                      )}
                       {r.status === 'CONFIRMED' && (
                         <Button size="sm" variant="gold" onClick={() => update.mutate({ id: r.id, next: 'SEATED' })}>
                           Seat

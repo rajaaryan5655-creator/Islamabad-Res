@@ -171,6 +171,8 @@ export interface OrderItemRow {
   quantity: number;
   total: number;
   notes: string | null;
+  /** Snapshot of the options chosen at the time of ordering. */
+  options?: { groupId: string; groupName: string; choiceId: string; label: string; priceDelta: number }[];
 }
 
 export interface Order {
@@ -196,6 +198,9 @@ export interface Order {
   paymentStatus: string;
   etaMinutes: number | null;
   trackingToken: string;
+  refundedAmount?: number;
+  refundedAt?: string | null;
+  refundReason?: string | null;
   createdAt: string;
   items: OrderItemRow[];
   events?: { id: string; status: string; note: string | null; createdAt: string }[];
@@ -215,6 +220,8 @@ export interface Reservation {
   requests: string | null;
   status: string;
   waitlistPos: number | null;
+  approvedAt?: string | null;
+  rejectionReason?: string | null;
   table?: { id: string; name: string; zone: string } | null;
 }
 

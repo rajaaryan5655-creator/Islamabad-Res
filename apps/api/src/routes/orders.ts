@@ -28,6 +28,23 @@ import { parseOptions } from '../lib/json.js';
 
 export const orderRouter = Router();
 
+/**
+ * Order rows carry `items[].options` as a JSON string column. Every response
+ * goes through here so clients never have to parse it themselves.
+ */
+function serializeOrder<T extends { items?: { options?: string | null }[] }>(order: T) {
+  if (!order?.items) return order;
+  return {
+    ...order,
+    items: order.items.map((item) => ({ ...item, options: parseOptions(item.options) })),
+  };
+}
+
+function serializeOrders<T extends { items?: { options?: string | null }[] }>(orders: T[]) {
+  return orders.map(serializeOrder);
+}
+
+
 /* ------------------------------ live quoting ----------------------------- */
 
 /** Server-authoritative cart total — the web cart calls this before checkout. */
@@ -107,7 +124,7 @@ orderRouter.get(
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
-    res.json({ orders });
+    res.json({ orders: serializeOrders(orders) });
   }),
 );
 
@@ -120,7 +137,7 @@ orderRouter.get(
       include: { items: true, events: { orderBy: { createdAt: 'asc' } } },
     });
     if (!order) throw notFound('We could not find that order');
-    res.json({ order });
+    res.json({ order: serializeOrder(order) });
   }),
 );
 
@@ -136,7 +153,7 @@ orderRouter.get(
     const isOwner = order.userId === req.user!.sub;
     const isStaff = ['STAFF', 'MANAGER', 'SUPER_ADMIN'].includes(req.user!.role);
     if (!isOwner && !isStaff) throw forbidden();
-    res.json({ order });
+    res.json({ order: serializeOrder(order) });
   }),
 );
 
@@ -152,7 +169,7 @@ orderRouter.post(
       throw badRequest('This order is already being prepared and can no longer be cancelled online. Please call us.');
     }
     const updated = await transitionOrder(order.id, 'CANCELLED', req.user!.sub, 'Cancelled by customer');
-    res.json({ order: updated });
+    res.json({ order: serializeOrder(updated) });
   }),
 );
 
@@ -251,7 +268,7 @@ orderRouter.get(
       prisma.order.findMany({ where, include: { items: true }, orderBy: { createdAt: 'desc' }, skip, take }),
       prisma.order.count({ where }),
     ]);
-    res.json({ orders, total, page: Number(page) || 1, pageSize: take, totalPages: Math.ceil(total / take) });
+    res.json({ orders: serializeOrders(orders), total, page: Number(page) || 1, pageSize: take, totalPages: Math.ceil(total / take) });
   }),
 );
 
@@ -266,7 +283,7 @@ orderRouter.get(
       include: { items: true },
       orderBy: { createdAt: 'asc' },
     });
-    res.json({ orders });
+    res.json({ orders: serializeOrders(orders) });
   }),
 );
 
@@ -279,6 +296,6 @@ orderRouter.patch(
     const { status, note } = req.body as { status: OrderStatus; note?: string };
     const order = await transitionOrder(param(req, 'id'), status, req.user!.sub, note);
     await audit(req.user!.sub, 'order.status', 'Order', order.id, req, { status });
-    res.json({ order });
+    res.json({ order: serializeOrder(order) });
   }),
 );

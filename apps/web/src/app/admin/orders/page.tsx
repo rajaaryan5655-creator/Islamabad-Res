@@ -7,6 +7,7 @@ import { ChevronDown, Search } from 'lucide-react';
 import { ORDER_STATUSES, ORDER_STATUS_FLOW, ORDER_STATUS_META, type OrderStatus } from '@islamabad/shared';
 import { api, type Order } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { RefundPanel } from '@/components/admin/refund-panel';
 import { Badge, Skeleton } from '@/components/ui/primitives';
 import { cn, formatDate, formatPKR, relativeTime } from '@/lib/utils';
 
@@ -140,6 +141,9 @@ export default function AdminOrdersPage() {
                                 </span>
                                 <span className="tabular-nums text-cream/70">{formatPKR(item.total)}</span>
                               </div>
+                              {item.options && item.options.length > 0 && (
+                                <p className="text-xs text-cream/55">{item.options.map((o) => o.label).join(' · ')}</p>
+                              )}
                               {item.notes && (
                                 <p className="text-xs italic text-saffron-400/80">Kitchen note: {item.notes}</p>
                               )}
@@ -175,8 +179,12 @@ export default function AdminOrdersPage() {
                       </div>
                     </div>
 
+                    <div className="mt-5 border-t border-white/8 pt-4">
+                      <RefundPanel order={order} />
+                    </div>
+
                     {nexts.length > 0 && (
-                      <div className="mt-5 flex flex-wrap gap-2 border-t border-white/8 pt-4">
+                      <div className="mt-4 flex flex-wrap gap-2 border-t border-white/8 pt-4">
                         <span className="self-center text-xs text-cream/40">Move to:</span>
                         {nexts.map((next) => (
                           <Button

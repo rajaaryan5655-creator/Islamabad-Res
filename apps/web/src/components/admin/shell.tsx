@@ -9,7 +9,10 @@ import {
   ChefHat,
   Inbox,
   LogOut,
+  LayoutGrid,
   Receipt,
+  Settings,
+  Star,
   Tag,
   UserCog,
   Users,
@@ -25,10 +28,13 @@ const LINKS = [
   { href: '/admin/kitchen', label: 'Kitchen board', Icon: ChefHat, minRole: 'STAFF' },
   { href: '/admin/reservations', label: 'Reservations', Icon: CalendarDays, minRole: 'STAFF' },
   { href: '/admin/menu', label: 'Menu', Icon: UtensilsCrossed, minRole: 'MANAGER' },
+  { href: '/admin/categories', label: 'Categories', Icon: LayoutGrid, minRole: 'MANAGER' },
+  { href: '/admin/reviews', label: 'Reviews', Icon: Star, minRole: 'STAFF' },
   { href: '/admin/customers', label: 'Customers', Icon: Users, minRole: 'MANAGER' },
   { href: '/admin/marketing', label: 'Marketing', Icon: Tag, minRole: 'MANAGER' },
   { href: '/admin/inbox', label: 'Inbox', Icon: Inbox, minRole: 'STAFF' },
   { href: '/admin/staff', label: 'Staff', Icon: UserCog, minRole: 'SUPER_ADMIN' },
+  { href: '/admin/settings', label: 'Settings', Icon: Settings, minRole: 'MANAGER' },
 ];
 
 const RANK: Record<string, number> = { CUSTOMER: 10, STAFF: 20, MANAGER: 30, SUPER_ADMIN: 40 };
