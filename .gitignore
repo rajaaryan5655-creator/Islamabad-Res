@@ -1,3 +1,33 @@
 node_modules/
 .DS_Store
 *.log
+
+# build output
+.next/
+dist/
+out/
+*.tsbuildinfo
+
+# env
+.env
+.env.local
+.env.*.local
+
+# database
+*.db
+*.db-journal
+# SQLite write-ahead log sidecars — binary, per-machine, never useful in git.
+*.db-shm
+*.db-wal
+*.sqlite
+
+# generated prisma client
+apps/api/src/generated/
+
+# test
+coverage/
+
+# The GitHub App token used by this environment lacks the `workflows` scope, so
+# .github/workflows cannot be pushed. The CI definition is kept here for the
+# maintainer to add manually — see the PR description.
+.github/workflows/

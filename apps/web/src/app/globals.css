@@ -1,0 +1,271 @@
+@import 'tailwindcss';
+
+/* =============================================================================
+   Islamabad Restaurant — design system
+   Dark, warm, editorial. Charcoal + ember red + saffron gold on cream.
+   ============================================================================= */
+
+@theme {
+  /* brand palette */
+  --color-obsidian: #0a0a0a;
+  --color-charcoal: #121212;
+  --color-charcoal-2: #1a1a1a;
+  --color-charcoal-3: #242424;
+
+  --color-ember-50: #fef2f3;
+  --color-ember-100: #fde3e5;
+  --color-ember-300: #f4a0a8;
+  --color-ember-500: #c8102e;
+  --color-ember-600: #ab0d27;
+  --color-ember-700: #8f0a20;
+  --color-ember-900: #5c0715;
+
+  --color-saffron-100: #fef4d6;
+  --color-saffron-300: #f9d67a;
+  --color-saffron-400: #f4b400;
+  --color-saffron-500: #d4a437;
+  --color-saffron-600: #b08422;
+
+  --color-cream: #f7f3ec;
+  --color-cream-dark: #ece5d8;
+  --color-smoke: #8a8a8a;
+
+  /* typography */
+  --font-display: var(--font-cormorant), Georgia, 'Times New Roman', serif;
+  --font-body: var(--font-inter), system-ui, -apple-system, sans-serif;
+  --font-script: var(--font-dancing), cursive;
+
+  /* motion */
+  --ease-luxe: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* layout */
+  --spacing-header: 5.5rem;
+}
+
+:root {
+  --background: var(--color-cream);
+  --foreground: #16130f;
+  --muted: #6b6560;
+  --border: #e4ddd0;
+  --card: #ffffff;
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: var(--color-obsidian);
+  --foreground: #f4f1ec;
+  --muted: #9a938c;
+  --border: #2a2724;
+  --card: var(--color-charcoal-2);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    scroll-padding-top: var(--spacing-header);
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-body);
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1, h2, h3, h4, h5 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+  }
+
+  ::selection {
+    background: var(--color-ember-500);
+    color: #fff;
+  }
+
+  /* Visible, on-brand focus for keyboard users only. */
+  :focus-visible {
+    outline: 2px solid var(--color-saffron-400);
+    outline-offset: 3px;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track { background: var(--color-obsidian); }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-ember-700);
+    border-radius: 99px;
+    border: 3px solid var(--color-obsidian);
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-ember-500); }
+}
+
+@layer components {
+  .container-luxe {
+    width: min(100% - 2.5rem, 82rem);
+    margin-inline: auto;
+  }
+
+  @media (min-width: 1536px) {
+    .container-luxe { width: min(100% - 5rem, 88rem); }
+  }
+
+  /* Small caps eyebrow used above every section heading. */
+  .eyebrow {
+    font-family: var(--font-body);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    color: var(--color-saffron-500);
+  }
+
+  .script-accent {
+    font-family: var(--font-script);
+    color: var(--color-saffron-400);
+    font-weight: 700;
+  }
+
+  /* Gold hairline divider with a centred diamond. */
+  .rule-gold {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .rule-gold::before,
+  .rule-gold::after {
+    content: '';
+    height: 1px;
+    flex: 1;
+    background: linear-gradient(90deg, transparent, var(--color-saffron-500), transparent);
+  }
+
+  .text-balance { text-wrap: balance; }
+  .text-pretty { text-wrap: pretty; }
+}
+
+@layer utilities {
+  /* Scroll-reveal — progressively enhanced, visible by default for no-JS/SEO. */
+  .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition:
+      opacity 0.85s var(--ease-out-expo),
+      transform 0.85s var(--ease-out-expo);
+    will-change: opacity, transform;
+  }
+  .reveal.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+
+  .hover-lift {
+    transition: transform 0.45s var(--ease-luxe), box-shadow 0.45s var(--ease-luxe);
+  }
+  .hover-lift:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 22px 48px -12px rgb(0 0 0 / 0.28);
+  }
+
+  /* Gold shimmer used on premium CTAs. */
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgb(255 255 255 / 0.22),
+      transparent
+    );
+  }
+  .shimmer:hover::after {
+    animation: shimmer 0.9s var(--ease-luxe);
+  }
+  @keyframes shimmer {
+    to { transform: translateX(100%); }
+  }
+
+  .grain::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    z-index: 1;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .mask-fade-b {
+    -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent);
+    mask-image: linear-gradient(to bottom, #000 62%, transparent);
+  }
+
+  .animate-marquee {
+    animation: marquee 42s linear infinite;
+  }
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+
+  .animate-float {
+    animation: float 7s ease-in-out infinite;
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-11px); }
+  }
+
+  .animate-pulse-ring::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: inherit;
+    border: 2px solid var(--color-ember-500);
+    animation: pulse-ring 2s var(--ease-luxe) infinite;
+  }
+  @keyframes pulse-ring {
+    0% { opacity: 0.8; transform: scale(0.95); }
+    100% { opacity: 0; transform: scale(1.35); }
+  }
+}
+
+/* Respect the OS-level motion preference everywhere. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
+/* Print: strip chrome, keep the menu readable. */
+@media print {
+  header, footer, .no-print { display: none !important; }
+  body { background: #fff; color: #000; }
+}
