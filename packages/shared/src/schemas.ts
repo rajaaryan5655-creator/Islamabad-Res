@@ -34,6 +34,40 @@ export const oauthSchema = z.object({
   name: z.string().optional(),
 });
 
+export const forgotPasswordSchema = z.object({
+  email: z.email('Enter a valid email address').toLowerCase(),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(10, 'Reset link is invalid'),
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .regex(/[a-z]/, 'Include a lowercase letter')
+    .regex(/[A-Z]/, 'Include an uppercase letter')
+    .regex(/[0-9]/, 'Include a number'),
+});
+
+export const verifyEmailSchema = z.object({
+  token: z.string().min(10, 'Verification link is invalid'),
+});
+
+export const pushSubscriptionSchema = z.object({
+  endpoint: z.string().min(10),
+  keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }),
+});
+
+export const refundSchema = z.object({
+  amount: z.number().int().positive().optional(),
+  reason: z.string().trim().max(240).optional(),
+});
+
+export const reservationDecisionSchema = z.object({
+  decision: z.enum(['APPROVE', 'REJECT']),
+  tableId: z.string().optional(),
+  reason: z.string().trim().max(240).optional(),
+});
+
 export const profileUpdateSchema = z.object({
   name: z.string().trim().min(2).max(80).optional(),
   phone: phoneSchema.optional(),
@@ -94,16 +128,23 @@ export const categorySchema = z.object({
   slug: z.string().trim().min(2).max(50).optional(),
   description: z.string().trim().max(240).optional(),
   icon: z.string().max(40).optional(),
+  image: z.string().max(300).optional(),
   sortOrder: z.number().int().optional(),
   isActive: z.boolean().optional(),
 });
 
 /* --------------------------------- orders -------------------------------- */
 
+export const selectedOptionSchema = z.object({
+  groupId: z.string().min(1),
+  choiceId: z.string().min(1),
+});
+
 export const cartItemSchema = z.object({
   menuItemId: z.string().min(1),
   quantity: z.number().int().min(1).max(50),
   notes: z.string().max(240).optional(),
+  options: z.array(selectedOptionSchema).max(20).optional(),
 });
 
 export const checkoutSchema = z
@@ -222,6 +263,18 @@ export const staffSchema = z.object({
   position: z.string().max(60).optional(),
   password: z.string().min(8).optional(),
   isActive: z.boolean().optional(),
+});
+
+/* -------------------------------- settings -------------------------------- */
+
+export const settingsSchema = z.object({
+  acceptingOrders: z.boolean().optional(),
+  acceptingReservations: z.boolean().optional(),
+  autoApproveReservations: z.boolean().optional(),
+  deliveryEnabled: z.boolean().optional(),
+  pickupEnabled: z.boolean().optional(),
+  prepTimeMinutes: z.number().int().min(5).max(180).optional(),
+  announcement: z.string().max(240).optional().or(z.literal('')),
 });
 
 /* ------------------------------- ai assistant ----------------------------- */

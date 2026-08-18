@@ -33,6 +33,9 @@ model User {
 
   addresses     Address[]
   orders        Order[]
+  tokens        VerificationToken[]
+  pushSubs      PushSubscription[]
+  emailLogs     EmailLog[]
   reservations  Reservation[]
   reviews       Review[]
   pointsLedger  PointsEntry[]
@@ -131,9 +134,10 @@ model MenuItem {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  category Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  items    OrderItem[]
-  reviews  Review[]
+  category     Category          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  items        OrderItem[]
+  reviews      Review[]
+  optionGroups MenuOptionGroup[]
 
   @@index([categoryId])
   @@index([isAvailable])
@@ -176,6 +180,9 @@ model Order {
   deliveredAt    DateTime?
   cancelledAt    DateTime?
   cancelReason   String?
+  refundedAmount Int      @default(0)
+  refundedAt     DateTime?
+  refundReason   String?
   trackingToken  String   @unique
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -201,6 +208,7 @@ model OrderItem {
   quantity   Int
   total      Int
   notes      String?
+  options    String  @default("[]") // JSON: [{groupId,groupName,choiceId,label,priceDelta}]
 
   order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuItem MenuItem @relation(fields: [menuItemId], references: [id])
@@ -268,6 +276,9 @@ model Reservation {
   requests    String?
   status      String   @default("PENDING")
   waitlistPos Int?
+  approvedAt  DateTime?
+  approvedById String?
+  rejectionReason String?
   seatedAt    DateTime?
   cancelledAt DateTime?
   createdAt   DateTime @default(now())
@@ -420,6 +431,8 @@ model Review {
   title      String?
   body       String
   isApproved Boolean  @default(false)
+  reply      String? // owner response, shown under the review
+  repliedAt  DateTime?
   createdAt  DateTime @default(now())
 
   user     User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -444,6 +457,89 @@ model AuditLog {
   actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
 
   @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+
+/* ---------------------------- menu customization -------------------------- */
+
+model MenuOptionGroup {
+  id         String  @id @default(cuid())
+  menuItemId String
+  name       String // "Portion", "Spice level", "Add-ons"
+  type       String  @default("SINGLE") // SINGLE | MULTI
+  isRequired Boolean @default(false)
+  minSelect  Int     @default(0)
+  maxSelect  Int     @default(1)
+  sortOrder  Int     @default(0)
+
+  menuItem MenuItem          @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  choices  MenuOptionChoice[]
+
+  @@index([menuItemId])
+}
+
+model MenuOptionChoice {
+  id         String  @id @default(cuid())
+  groupId    String
+  label      String
+  priceDelta Int     @default(0) // may be negative
+  isDefault  Boolean @default(false)
+  isAvailable Boolean @default(true)
+  sortOrder  Int     @default(0)
+
+  group MenuOptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+}
+
+/* ------------------------------ auth tokens ------------------------------- */
+
+model VerificationToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  type      String // EMAIL_VERIFY | PASSWORD_RESET
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@index([expiresAt])
+}
+
+/* ----------------------------- notifications ------------------------------ */
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model EmailLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  to        String
+  subject   String
+  kind      String
+  status    String   @default("SENT") // SENT | FAILED
+  error     String?
+  body      String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([kind])
   @@index([createdAt])
 }
 

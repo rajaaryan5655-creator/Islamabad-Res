@@ -224,3 +224,155 @@ export function verifyStripeSignature(payload: string, signature: string | undef
     return false;
   }
 }
+
+/* --------------------------------- refunds -------------------------------- */
+
+export interface RefundResult {
+  refunded: number;
+  /** Total refunded across the order's lifetime, including this call. */
+  totalRefunded: number;
+  method: string;
+  reference: string | null;
+  /** True when the money must be returned by hand (cash, wallet transfer). */
+  manual: boolean;
+}
+
+/**
+ * Refunds an order, in full or in part.
+ *
+ * Card refunds go back through the original gateway; cash-on-delivery and
+ * wallet orders are flagged `manual` so the finance team knows a human has to
+ * move the money. Either way the ledger, loyalty points and customer record are
+ * corrected in one transaction — a refund that updates Stripe but not the
+ * database is worse than no refund at all.
+ */
+export async function refundPayment(orderId: string, amount?: number, reason?: string): Promise<RefundResult> {
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { payment: true },
+  });
+  if (!order) throw new Error('Order not found');
+  if (order.paymentStatus !== 'PAID' && order.refundedAmount === 0) {
+    throw new Error('This order has not been paid, so there is nothing to refund');
+  }
+
+  const refundable = order.total - order.refundedAmount;
+  if (refundable <= 0) throw new Error('This order has already been refunded in full');
+
+  const value = amount ?? refundable;
+  if (value <= 0) throw new Error('Refund amount must be greater than zero');
+  if (value > refundable) {
+    throw new Error(`Refund exceeds the remaining balance of Rs. ${refundable.toLocaleString('en-PK')}`);
+  }
+
+  const method = order.payment?.method ?? order.paymentMethod ?? 'COD';
+  let reference: string | null = null;
+  let manual = true;
+
+  if (method === 'CARD' && env.STRIPE_SECRET_KEY && order.payment?.intentId) {
+    // Real gateway call. Idempotency keyed on the running refund total so a
+    // retried request cannot double-refund.
+    const body = new URLSearchParams({
+      payment_intent: order.payment.intentId,
+      amount: String(value * 100),
+      reason: 'requested_by_customer',
+    });
+    const response = await fetch('https://api.stripe.com/v1/refunds', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Idempotency-Key': `refund_${orderId}_${order.refundedAmount + value}`,
+      },
+      body,
+    });
+    const json = (await response.json()) as { id?: string; error?: { message?: string } };
+    if (!response.ok) throw new Error(json.error?.message ?? 'The card network declined the refund');
+    reference = json.id ?? null;
+    manual = false;
+  } else if (method === 'CARD') {
+    // No live keys: record the intent so the flow is complete end to end.
+    reference = `sandbox_refund_${orderId.slice(-8)}_${order.refundedAmount + value}`;
+    manual = false;
+  }
+
+  const totalRefunded = order.refundedAmount + value;
+  const isFull = totalRefunded >= order.total;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.order.update({
+      where: { id: orderId },
+      data: {
+        refundedAmount: totalRefunded,
+        refundedAt: new Date(),
+        refundReason: reason ?? null,
+        paymentStatus: isFull ? 'REFUNDED' : 'PARTIALLY_REFUNDED',
+      },
+    });
+
+    if (order.payment) {
+      await tx.payment.update({
+        where: { id: order.payment.id },
+        data: { status: isFull ? 'REFUNDED' : 'PARTIALLY_REFUNDED' },
+      });
+    }
+
+    await tx.orderEvent.create({
+      data: {
+        orderId,
+        status: order.status,
+        note: `Refunded Rs. ${value.toLocaleString('en-PK')}${reason ? ` — ${reason}` : ''}`,
+      },
+    });
+
+    // Claw back loyalty earned on the refunded portion, proportionally.
+    if (order.userId && order.pointsEarned > 0) {
+      const clawback = Math.min(
+        order.pointsEarned,
+        Math.round((value / order.total) * order.pointsEarned),
+      );
+      if (clawback > 0) {
+        const user = await tx.user.findUnique({ where: { id: order.userId } });
+        if (user) {
+          const balance = Math.max(0, user.points - clawback);
+          await tx.user.update({
+            where: { id: order.userId },
+            data: {
+              points: balance,
+              lifetimePoints: Math.max(0, user.lifetimePoints - clawback),
+            },
+          });
+          await tx.pointsEntry.create({
+            data: {
+              userId: order.userId,
+              delta: -clawback,
+              reason: `Refund adjustment for ${order.orderNumber}`,
+              orderId,
+              balance,
+            },
+          });
+        }
+      }
+    }
+
+    // Return any points the customer spent on the refunded portion.
+    if (order.userId && order.pointsRedeemed > 0 && isFull) {
+      const user = await tx.user.findUnique({ where: { id: order.userId } });
+      if (user) {
+        const balance = user.points + order.pointsRedeemed;
+        await tx.user.update({ where: { id: order.userId }, data: { points: balance } });
+        await tx.pointsEntry.create({
+          data: {
+            userId: order.userId,
+            delta: order.pointsRedeemed,
+            reason: `Points returned for refunded ${order.orderNumber}`,
+            orderId,
+            balance,
+          },
+        });
+      }
+    }
+  });
+
+  return { refunded: value, totalRefunded, method, reference, manual };
+}

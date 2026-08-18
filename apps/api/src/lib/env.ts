@@ -16,6 +16,15 @@ const envSchema = z.object({
   PAYPAL_CLIENT_ID: z.string().optional().or(z.literal('')),
   PAYPAL_SECRET: z.string().optional().or(z.literal('')),
   SENTRY_DSN: z.string().optional().or(z.literal('')),
+
+  // Mail — without SMTP_URL messages are logged and recorded, never dropped.
+  SMTP_URL: z.string().optional().or(z.literal('')),
+  MAIL_FROM: z.string().optional().or(z.literal('')),
+
+  // Web Push (VAPID). Generate with: npx web-push generate-vapid-keys
+  VAPID_PUBLIC_KEY: z.string().optional().or(z.literal('')),
+  VAPID_PRIVATE_KEY: z.string().optional().or(z.literal('')),
+  VAPID_SUBJECT: z.string().default('mailto:support@islamabadrestaurant.pk'),
 });
 
 const parsed = envSchema.safeParse(process.env);

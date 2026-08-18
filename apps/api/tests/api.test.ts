@@ -495,10 +495,13 @@ describe('reservations', () => {
       })
       .expect(201);
 
-    expect(res.body.reservation.status).toBe('CONFIRMED');
-    expect(res.body.table).not.toBeNull();
     reservationId = res.body.reservation.id;
     code = res.body.reservation.code;
+
+    // A table is held, but the booking waits for a manager unless the
+    // autoApproveReservations setting is on (it is off by default).
+    expect(res.body.reservation.status).toBe('PENDING');
+    expect(res.body.table).not.toBeNull();
   });
 
   it('rejects a slot outside opening hours', async () => {
@@ -539,6 +542,89 @@ describe('reservations', () => {
   it('cancels using the confirmation code', async () => {
     const res = await request(app).post(`/api/reservations/${reservationId}/cancel`).send({ code }).expect(200);
     expect(res.body.reservation.status).toBe('CANCELLED');
+  });
+
+  it('lets a manager approve a pending booking', async () => {
+    const created = await request(app)
+      .post('/api/reservations')
+      .send({
+        name: 'Approve Me',
+        email: 'approve@example.com',
+        phone: '03001234567',
+        date: DATE,
+        time: '18:00',
+        guests: 4,
+        seating: 'ANY',
+      })
+      .expect(201);
+    expect(created.body.reservation.status).toBe('PENDING');
+
+    const res = await request(app)
+      .post(`/api/reservations/${created.body.reservation.id}/decision`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ decision: 'APPROVE' })
+      .expect(200);
+
+    expect(res.body.reservation.status).toBe('CONFIRMED');
+    expect(res.body.reservation.tableId).toBeTruthy();
+    expect(res.body.reservation.approvedAt).toBeTruthy();
+  });
+
+  it('lets a manager reject a pending booking with a reason', async () => {
+    const created = await request(app)
+      .post('/api/reservations')
+      .send({
+        name: 'Reject Me',
+        email: 'reject@example.com',
+        phone: '03001234567',
+        date: DATE,
+        time: '18:30',
+        guests: 4,
+        seating: 'ANY',
+      })
+      .expect(201);
+
+    const res = await request(app)
+      .post(`/api/reservations/${created.body.reservation.id}/decision`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ decision: 'REJECT', reason: 'Private event that evening' })
+      .expect(200);
+
+    expect(res.body.reservation.status).toBe('REJECTED');
+    expect(res.body.reservation.rejectionReason).toBe('Private event that evening');
+    // The held table must be released back to the floor.
+    expect(res.body.reservation.tableId).toBeNull();
+  });
+
+  it('refuses a decision from a customer', async () => {
+    const created = await request(app).post('/api/reservations').send({
+      name: 'Not Yours',
+      email: 'notyours@example.com',
+      phone: '03001234567',
+      date: DATE,
+      time: '19:30',
+      guests: 2,
+      seating: 'ANY',
+    });
+    await request(app)
+      .post(`/api/reservations/${created.body.reservation.id}/decision`)
+      .send({ decision: 'APPROVE' })
+      .expect(401);
+  });
+
+  it('refuses a second decision on an already-decided booking', async () => {
+    const created = await request(app).post('/api/reservations').send({
+      name: 'Twice',
+      email: 'twice@example.com',
+      phone: '03001234567',
+      date: DATE,
+      time: '20:30',
+      guests: 2,
+      seating: 'ANY',
+    });
+    const id = created.body.reservation.id;
+    await request(app).post(`/api/reservations/${id}/decision`).set('Authorization', `Bearer ${adminToken}`).send({ decision: 'APPROVE' }).expect(200);
+    await request(app).post(`/api/reservations/${id}/decision`).set('Authorization', `Bearer ${adminToken}`).send({ decision: 'REJECT' }).expect(400);
   });
 
   it('refuses cancellation without the code or ownership', async () => {

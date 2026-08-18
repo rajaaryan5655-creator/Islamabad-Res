@@ -155,6 +155,9 @@ CREATE TABLE IF NOT EXISTS "Order" (
   "deliveredAt" TIMESTAMPTZ(3),
   "cancelledAt" TIMESTAMPTZ(3),
   "cancelReason" TEXT,
+  "refundedAmount" INTEGER NOT NULL DEFAULT 0,
+  "refundedAt" TIMESTAMPTZ(3),
+  "refundReason" TEXT,
   "trackingToken" TEXT NOT NULL,
   "createdAt" TIMESTAMPTZ(3) NOT NULL,
   "updatedAt" TIMESTAMPTZ(3) NOT NULL,
@@ -178,6 +181,7 @@ CREATE TABLE IF NOT EXISTS "OrderItem" (
   "quantity" INTEGER NOT NULL,
   "total" INTEGER NOT NULL,
   "notes" TEXT,
+  "options" TEXT NOT NULL DEFAULT '[]',
   FOREIGN KEY ("orderId") REFERENCES "Order"("id") ON DELETE CASCADE ON UPDATE CASCADE,
   FOREIGN KEY ("menuItemId") REFERENCES "MenuItem"("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
@@ -241,6 +245,9 @@ CREATE TABLE IF NOT EXISTS "Reservation" (
   "requests" TEXT,
   "status" TEXT NOT NULL DEFAULT 'PENDING',
   "waitlistPos" INTEGER,
+  "approvedAt" TIMESTAMPTZ(3),
+  "approvedById" TEXT,
+  "rejectionReason" TEXT,
   "seatedAt" TIMESTAMPTZ(3),
   "cancelledAt" TIMESTAMPTZ(3),
   "createdAt" TIMESTAMPTZ(3) NOT NULL,
@@ -388,6 +395,8 @@ CREATE TABLE IF NOT EXISTS "Review" (
   "title" TEXT,
   "body" TEXT NOT NULL,
   "isApproved" BOOLEAN NOT NULL DEFAULT false,
+  "reply" TEXT,
+  "repliedAt" TIMESTAMPTZ(3),
   "createdAt" TIMESTAMPTZ(3) NOT NULL,
   FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE,
   FOREIGN KEY ("menuItemId") REFERENCES "MenuItem"("id") ON DELETE CASCADE ON UPDATE CASCADE
@@ -410,6 +419,78 @@ CREATE TABLE IF NOT EXISTS "AuditLog" (
 
 CREATE INDEX IF NOT EXISTS "AuditLog_entity_entityId_idx" ON "AuditLog"("entity", "entityId");
 CREATE INDEX IF NOT EXISTS "AuditLog_createdAt_idx" ON "AuditLog"("createdAt");
+
+CREATE TABLE IF NOT EXISTS "MenuOptionGroup" (
+  "id" TEXT PRIMARY KEY,
+  "menuItemId" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "type" TEXT NOT NULL DEFAULT 'SINGLE',
+  "isRequired" BOOLEAN NOT NULL DEFAULT false,
+  "minSelect" INTEGER NOT NULL DEFAULT 0,
+  "maxSelect" INTEGER NOT NULL DEFAULT 1,
+  "sortOrder" INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY ("menuItemId") REFERENCES "MenuItem"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS "MenuOptionGroup_menuItemId_idx" ON "MenuOptionGroup"("menuItemId");
+
+CREATE TABLE IF NOT EXISTS "MenuOptionChoice" (
+  "id" TEXT PRIMARY KEY,
+  "groupId" TEXT NOT NULL,
+  "label" TEXT NOT NULL,
+  "priceDelta" INTEGER NOT NULL DEFAULT 0,
+  "isDefault" BOOLEAN NOT NULL DEFAULT false,
+  "isAvailable" BOOLEAN NOT NULL DEFAULT true,
+  "sortOrder" INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY ("groupId") REFERENCES "MenuOptionGroup"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS "MenuOptionChoice_groupId_idx" ON "MenuOptionChoice"("groupId");
+
+CREATE TABLE IF NOT EXISTS "VerificationToken" (
+  "id" TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL,
+  "tokenHash" TEXT NOT NULL,
+  "type" TEXT NOT NULL,
+  "expiresAt" TIMESTAMPTZ(3) NOT NULL,
+  "usedAt" TIMESTAMPTZ(3),
+  "createdAt" TIMESTAMPTZ(3) NOT NULL,
+  FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "VerificationToken_tokenHash_key" ON "VerificationToken"("tokenHash");
+CREATE INDEX IF NOT EXISTS "VerificationToken_userId_type_idx" ON "VerificationToken"("userId", "type");
+CREATE INDEX IF NOT EXISTS "VerificationToken_expiresAt_idx" ON "VerificationToken"("expiresAt");
+
+CREATE TABLE IF NOT EXISTS "PushSubscription" (
+  "id" TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL,
+  "endpoint" TEXT NOT NULL,
+  "p256dh" TEXT NOT NULL,
+  "auth" TEXT NOT NULL,
+  "userAgent" TEXT,
+  "createdAt" TIMESTAMPTZ(3) NOT NULL,
+  FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS "PushSubscription_endpoint_key" ON "PushSubscription"("endpoint");
+CREATE INDEX IF NOT EXISTS "PushSubscription_userId_idx" ON "PushSubscription"("userId");
+
+CREATE TABLE IF NOT EXISTS "EmailLog" (
+  "id" TEXT PRIMARY KEY,
+  "userId" TEXT,
+  "to" TEXT NOT NULL,
+  "subject" TEXT NOT NULL,
+  "kind" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'SENT',
+  "error" TEXT,
+  "body" TEXT,
+  "createdAt" TIMESTAMPTZ(3) NOT NULL,
+  FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS "EmailLog_kind_idx" ON "EmailLog"("kind");
+CREATE INDEX IF NOT EXISTS "EmailLog_createdAt_idx" ON "EmailLog"("createdAt");
 
 CREATE TABLE IF NOT EXISTS "Setting" (
   "key" TEXT PRIMARY KEY,

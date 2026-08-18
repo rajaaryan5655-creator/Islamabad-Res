@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { couponSchema, staffSchema, ORDER_STATUSES } from '@islamabad/shared';
+import { couponSchema, staffSchema, categorySchema, settingsSchema, refundSchema, ORDER_STATUSES } from '@islamabad/shared';
 import { prisma } from '../lib/prisma.js';
 import { cached, cache } from '../lib/cache.js';
 import {
@@ -14,10 +14,25 @@ import {
 } from '../middleware/index.js';
 import { hashPassword, generateReferralCode } from '../lib/auth.js';
 import { audit } from '../services/audit.js';
+import { refundPayment } from '../services/payments.js';
+import { getSettings, updateSettings } from '../services/settings.js';
+import { queueEmail, refundEmail } from '../services/email/index.js';
+import { uniqueSlug } from '../lib/slug.js';
 
 export const adminRouter = Router();
 
 adminRouter.use(authenticate, requireStaff);
+
+/** Shared list paging: bounded page size, consistent envelope. */
+function paging(query: Record<string, unknown>, defaultSize = 25, maxSize = 100) {
+  const page = Math.max(1, Number(query.page) || 1);
+  const take = Math.min(Math.max(1, Number(query.pageSize) || defaultSize), maxSize);
+  return { page, take, skip: (page - 1) * take };
+}
+
+function envelope<T>(rows: T[], total: number, page: number, take: number) {
+  return { total, page, pageSize: take, totalPages: Math.max(1, Math.ceil(total / take)), rows };
+}
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000);
@@ -380,9 +395,15 @@ adminRouter.delete(
 
 adminRouter.get(
   '/messages',
-  asyncHandler(async (_req, res) => {
-    const messages = await prisma.contactMessage.findMany({ orderBy: { createdAt: 'desc' }, take: 100 });
-    res.json({ messages });
+  asyncHandler(async (req, res) => {
+    const { page, take, skip } = paging(req.query as Record<string, unknown>);
+    const { status } = req.query as { status?: string };
+    const where = status ? { status } : {};
+    const [messages, total] = await Promise.all([
+      prisma.contactMessage.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take }),
+      prisma.contactMessage.count({ where }),
+    ]);
+    res.json({ messages, ...envelope(messages, total, page, take) });
   }),
 );
 
@@ -399,9 +420,15 @@ adminRouter.patch(
 
 adminRouter.get(
   '/enquiries',
-  asyncHandler(async (_req, res) => {
-    const enquiries = await prisma.eventEnquiry.findMany({ orderBy: { createdAt: 'desc' }, take: 100 });
-    res.json({ enquiries });
+  asyncHandler(async (req, res) => {
+    const { page, take, skip } = paging(req.query as Record<string, unknown>);
+    const { status } = req.query as { status?: string };
+    const where = status ? { status } : {};
+    const [enquiries, total] = await Promise.all([
+      prisma.eventEnquiry.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take }),
+      prisma.eventEnquiry.count({ where }),
+    ]);
+    res.json({ enquiries, ...envelope(enquiries, total, page, take) });
   }),
 );
 
@@ -416,18 +443,331 @@ adminRouter.patch(
   }),
 );
 
+
+/* ------------------------------- categories ------------------------------- */
+
+adminRouter.get(
+  '/categories',
+  asyncHandler(async (_req, res) => {
+    const categories = await prisma.category.findMany({
+      orderBy: { sortOrder: 'asc' },
+      include: { _count: { select: { items: true } } },
+    });
+    res.json({ categories });
+  }),
+);
+
+adminRouter.post(
+  '/categories',
+  requireManager,
+  validate(categorySchema),
+  asyncHandler(async (req, res) => {
+    const input = req.body as { name: string; description?: string; image?: string; icon?: string; sortOrder?: number; isActive?: boolean };
+    const category = await prisma.category.create({
+      data: {
+        name: input.name,
+        slug: await uniqueSlug('category', input.name),
+        description: input.description ?? null,
+        image: input.image ?? null,
+        icon: input.icon ?? null,
+        sortOrder: input.sortOrder ?? 0,
+        isActive: input.isActive ?? true,
+      },
+    });
+    await cache.delPrefix('menu:');
+    await audit(req.user!.sub, 'category.create', 'Category', category.id, req);
+    res.status(201).json({ category });
+  }),
+);
+
+adminRouter.patch(
+  '/categories/:id',
+  requireManager,
+  asyncHandler(async (req, res) => {
+    const id = param(req, 'id');
+    const input = categorySchema.partial().parse(req.body);
+    const category = await prisma.category.update({
+      where: { id },
+      data: {
+        ...input,
+        ...(input.name ? { slug: await uniqueSlug('category', input.name, id) } : {}),
+      },
+    });
+    await cache.delPrefix('menu:');
+    await audit(req.user!.sub, 'category.update', 'Category', id, req);
+    res.json({ category });
+  }),
+);
+
+/**
+ * Categories are never hard-deleted while they still hold dishes — that would
+ * cascade away live menu items and their order history.
+ */
+adminRouter.delete(
+  '/categories/:id',
+  requireManager,
+  asyncHandler(async (req, res) => {
+    const id = param(req, 'id');
+    const count = await prisma.menuItem.count({ where: { categoryId: id } });
+    if (count > 0) {
+      throw badRequest(`This category still holds ${count} dish${count === 1 ? '' : 'es'}. Move or delete them first.`);
+    }
+    await prisma.category.delete({ where: { id } });
+    await cache.delPrefix('menu:');
+    await audit(req.user!.sub, 'category.delete', 'Category', id, req);
+    res.json({ deleted: true });
+  }),
+);
+
+/** Drag-and-drop ordering from the admin UI. */
+adminRouter.post(
+  '/categories/reorder',
+  requireManager,
+  asyncHandler(async (req, res) => {
+    const { order } = req.body as { order: string[] };
+    if (!Array.isArray(order) || order.length === 0) throw badRequest('Send an array of category ids');
+    await prisma.$transaction(
+      order.map((id, index) => prisma.category.update({ where: { id }, data: { sortOrder: index } })),
+    );
+    await cache.delPrefix('menu:');
+    res.json({ reordered: order.length });
+  }),
+);
+
+/* --------------------------- review moderation ---------------------------- */
+
+adminRouter.get(
+  '/reviews',
+  asyncHandler(async (req, res) => {
+    const { page, take, skip } = paging(req.query as Record<string, unknown>);
+    const { status = 'pending' } = req.query as { status?: string };
+    const where: Record<string, unknown> =
+      status === 'all' ? {} : { isApproved: status === 'approved' };
+
+    const [reviews, total, pending] = await Promise.all([
+      prisma.review.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+        include: {
+          user: { select: { id: true, name: true, email: true, tier: true } },
+          menuItem: { select: { id: true, name: true, slug: true } },
+        },
+      }),
+      prisma.review.count({ where }),
+      prisma.review.count({ where: { isApproved: false } }),
+    ]);
+
+    res.json({ reviews, pending, ...envelope(reviews, total, page, take) });
+  }),
+);
+
+/** Rating distribution and trend, for the reviews dashboard. */
+adminRouter.get(
+  '/reviews/analytics',
+  asyncHandler(async (_req, res) => {
+    const [byRating, approved, total, recent] = await Promise.all([
+      prisma.review.groupBy({ by: ['rating'], where: { isApproved: true }, _count: { rating: true } }),
+      prisma.review.aggregate({ where: { isApproved: true }, _avg: { rating: true }, _count: true }),
+      prisma.review.count(),
+      prisma.review.findMany({
+        where: { isApproved: true, createdAt: { gte: daysAgo(30) } },
+        select: { rating: true, createdAt: true },
+      }),
+    ]);
+
+    const distribution = [5, 4, 3, 2, 1].map((rating) => ({
+      rating,
+      count: byRating.find((r) => r.rating === rating)?._count.rating ?? 0,
+    }));
+
+    res.json({
+      average: Number((approved._avg.rating ?? 0).toFixed(2)),
+      approvedCount: approved._count,
+      totalCount: total,
+      pendingCount: total - approved._count,
+      distribution,
+      last30Days: {
+        count: recent.length,
+        average: recent.length
+          ? Number((recent.reduce((sum, r) => sum + r.rating, 0) / recent.length).toFixed(2))
+          : 0,
+      },
+    });
+  }),
+);
+
+adminRouter.patch(
+  '/reviews/:id',
+  requireManager,
+  asyncHandler(async (req, res) => {
+    const id = param(req, 'id');
+    const { isApproved, reply } = req.body as { isApproved?: boolean; reply?: string };
+
+    const review = await prisma.review.update({
+      where: { id },
+      data: {
+        ...(typeof isApproved === 'boolean' ? { isApproved } : {}),
+        ...(reply !== undefined ? { reply: reply || null, repliedAt: reply ? new Date() : null } : {}),
+      },
+      include: { user: { select: { id: true, name: true } } },
+    });
+
+    // Tell the guest their review is live, or that the owner has replied.
+    if (review.userId) {
+      await prisma.notification.create({
+        data: {
+          userId: review.userId,
+          type: 'SYSTEM',
+          title: reply ? 'The restaurant replied to your review' : 'Your review is published',
+          body: reply ? reply.slice(0, 160) : 'Thank you for the feedback — your review is now on the site.',
+          link: '/dashboard/reviews',
+        },
+      });
+    }
+
+    await audit(req.user!.sub, 'review.moderate', 'Review', id, req);
+    res.json({ review });
+  }),
+);
+
+adminRouter.delete(
+  '/reviews/:id',
+  requireManager,
+  asyncHandler(async (req, res) => {
+    const id = param(req, 'id');
+    await prisma.review.delete({ where: { id } });
+    await audit(req.user!.sub, 'review.delete', 'Review', id, req);
+    res.json({ deleted: true });
+  }),
+);
+
+/* --------------------------------- refunds -------------------------------- */
+
+/**
+ * Issues a full or partial refund. Manager-only, audited, and idempotent at the
+ * gateway — the endpoint refuses to refund more than the order is worth.
+ */
+adminRouter.post(
+  '/orders/:id/refund',
+  requireManager,
+  validate(refundSchema),
+  asyncHandler(async (req, res) => {
+    const id = param(req, 'id');
+    const { amount, reason } = req.body as { amount?: number; reason?: string };
+
+    const order = await prisma.order.findUnique({ where: { id } });
+    if (!order) throw badRequest('Order not found');
+
+    let result;
+    try {
+      result = await refundPayment(id, amount, reason);
+    } catch (err) {
+      throw badRequest((err as Error).message);
+    }
+
+    if (order.userId) {
+      await prisma.notification.create({
+        data: {
+          userId: order.userId,
+          type: 'ORDER',
+          title: 'Refund issued',
+          body: `Rs. ${result.refunded.toLocaleString('en-PK')} has been refunded for order ${order.orderNumber}.`,
+          link: `/track/${order.trackingToken}`,
+        },
+      });
+    }
+
+    if (order.customerEmail) {
+      queueEmail({
+        to: order.customerEmail,
+        kind: 'refund',
+        userId: order.userId,
+        email: refundEmail({
+          name: order.customerName,
+          orderNumber: order.orderNumber,
+          amount: result.refunded,
+          reason: reason ?? null,
+        }),
+      });
+    }
+
+    await audit(req.user!.sub, 'order.refund', 'Order', id, req);
+    res.json({ refund: result });
+  }),
+);
+
+/* -------------------------------- settings -------------------------------- */
+
+adminRouter.get(
+  '/settings',
+  asyncHandler(async (_req, res) => {
+    res.json({ settings: await getSettings() });
+  }),
+);
+
+adminRouter.patch(
+  '/settings',
+  requireManager,
+  validate(settingsSchema),
+  asyncHandler(async (req, res) => {
+    const settings = await updateSettings(req.body as Record<string, never>);
+    await audit(req.user!.sub, 'settings.update', 'Setting', 'restaurant', req);
+    res.json({ settings });
+  }),
+);
+
+/* ------------------------------- email log -------------------------------- */
+
+/** Delivery log — lets staff confirm a customer really was emailed. */
+adminRouter.get(
+  '/emails',
+  requireManager,
+  asyncHandler(async (req, res) => {
+    const { page, take, skip } = paging(req.query as Record<string, unknown>);
+    const { kind, status } = req.query as { kind?: string; status?: string };
+    const where: Record<string, unknown> = {};
+    if (kind) where.kind = kind;
+    if (status) where.status = status;
+
+    const [emails, total] = await Promise.all([
+      prisma.emailLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+        select: { id: true, to: true, subject: true, kind: true, status: true, error: true, createdAt: true },
+      }),
+      prisma.emailLog.count({ where }),
+    ]);
+    res.json({ emails, ...envelope(emails, total, page, take) });
+  }),
+);
+
 /* ------------------------------- audit log ------------------------------- */
 
 adminRouter.get(
   '/audit',
   requireSuperAdmin,
-  asyncHandler(async (_req, res) => {
-    const logs = await prisma.auditLog.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 200,
-      include: { actor: { select: { name: true, email: true, role: true } } },
-    });
-    res.json({ logs });
+  asyncHandler(async (req, res) => {
+    const { page, take, skip } = paging(req.query as Record<string, unknown>, 50, 200);
+    const { action, actorId } = req.query as { action?: string; actorId?: string };
+    const where: Record<string, unknown> = {};
+    if (action) where.action = { contains: action };
+    if (actorId) where.actorId = actorId;
+
+    const [logs, total] = await Promise.all([
+      prisma.auditLog.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+        include: { actor: { select: { name: true, email: true, role: true } } },
+      }),
+      prisma.auditLog.count({ where }),
+    ]);
+    res.json({ logs, ...envelope(logs, total, page, take) });
   }),
 );
 

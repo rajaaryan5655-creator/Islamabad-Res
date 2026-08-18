@@ -6,6 +6,7 @@ import {
   durationForGuests,
   reservationSchema,
   reservationStatusSchema,
+  reservationDecisionSchema,
   slotsForDate,
   toMinutes,
   type BookedRange,
@@ -29,8 +30,18 @@ import {
 import { reservationCode } from '../lib/auth.js';
 import { cache } from '../lib/cache.js';
 import { audit } from '../services/audit.js';
+import { env } from '../lib/env.js';
+import { BRAND } from '@islamabad/shared';
+import { getSettings } from '../services/settings.js';
+import { queueEmail, reservationEmail } from '../services/email/index.js';
+import { sendPush } from '../services/push.js';
 
 export const reservationRouter = Router();
+
+/** Deep link that lets a guest look up or cancel a booking without an account. */
+function manageUrl(code: string): string {
+  return `${env.WEB_ORIGIN.replace(/\/$/, '')}/reservations?code=${encodeURIComponent(code)}`;
+}
 
 const ACTIVE: ReservationStatus[] = ['PENDING', 'CONFIRMED', 'SEATED'];
 
@@ -102,6 +113,11 @@ reservationRouter.post(
       throw badRequest('We are not seating at that time — please pick from the available slots');
     }
 
+    const settings = await getSettings();
+    if (!settings.acceptingReservations) {
+      throw badRequest('Online bookings are paused right now — please call us on ' + BRAND.phone);
+    }
+
     const booked = await bookedRanges(input.date);
     const table = allocateTable(input.guests, input.time, booked, input.seating);
 
@@ -111,6 +127,13 @@ reservationRouter.post(
       waitlistPos =
         (await prisma.reservation.count({ where: { date: input.date, time: input.time, status: 'WAITLIST' } })) + 1;
     }
+
+    /**
+     * A table being free is not the same as the booking being accepted. Unless
+     * the manager has switched auto-approval on, a held table sits at PENDING
+     * until someone on the floor confirms it.
+     */
+    const status = isWaitlist ? 'WAITLIST' : settings.autoApproveReservations ? 'CONFIRMED' : 'PENDING';
 
     const reservation = await prisma.reservation.create({
       data: {
@@ -127,24 +150,47 @@ reservationRouter.post(
         seating: input.seating,
         occasion: input.occasion ?? null,
         requests: input.requests || null,
-        status: isWaitlist ? 'WAITLIST' : 'CONFIRMED',
+        status,
+        approvedAt: status === 'CONFIRMED' ? new Date() : null,
         waitlistPos,
       },
     });
 
+    const headline =
+      status === 'WAITLIST'
+        ? 'You are on the waiting list'
+        : status === 'CONFIRMED'
+          ? 'Table confirmed'
+          : 'Booking request received';
+    const detail =
+      status === 'WAITLIST'
+        ? `We will call you if a table frees up for ${input.guests} on ${input.date} at ${input.time}.`
+        : status === 'CONFIRMED'
+          ? `Table for ${input.guests} confirmed on ${input.date} at ${input.time}. Code ${reservation.code}.`
+          : `We have your request for ${input.guests} on ${input.date} at ${input.time}. Our team will confirm shortly. Code ${reservation.code}.`;
+
     if (req.user) {
       await prisma.notification.create({
-        data: {
-          userId: req.user.sub,
-          type: 'RESERVATION',
-          title: isWaitlist ? 'You are on the waiting list' : 'Table confirmed',
-          body: isWaitlist
-            ? `We will call you if a table frees up for ${input.guests} on ${input.date} at ${input.time}.`
-            : `Table for ${input.guests} confirmed on ${input.date} at ${input.time}. Code ${reservation.code}.`,
-          link: '/dashboard/reservations',
-        },
+        data: { userId: req.user.sub, type: 'RESERVATION', title: headline, body: detail, link: '/dashboard/reservations' },
       });
     }
+
+    queueEmail({
+      to: reservation.email,
+      kind: 'reservation-' + status.toLowerCase(),
+      userId: reservation.userId,
+      email: reservationEmail({
+        name: reservation.name,
+        code: reservation.code,
+        date: reservation.date,
+        time: reservation.time,
+        guests: reservation.guests,
+        status: status as 'PENDING' | 'CONFIRMED' | 'WAITLIST',
+        tableName: table?.name ?? null,
+        occasion: reservation.occasion,
+        manageUrl: manageUrl(reservation.code),
+      }),
+    });
 
     await cache.delPrefix(`availability:${input.date}`);
     await audit(req.user?.sub ?? null, 'reservation.create', 'Reservation', reservation.id, req);
@@ -279,6 +325,158 @@ reservationRouter.post(
 
     await cache.delPrefix(`availability:${reservation.date}`);
     res.json({ reservation: updated, promoted: Boolean(waiting) });
+  }),
+);
+
+
+/* --------------------------- approve / reject ----------------------------- */
+
+/**
+ * The manager's decision on a pending request. Approving allocates (or keeps) a
+ * table and notifies the guest; rejecting frees the hold and explains why.
+ * Both paths email the guest, because a booking they never hear back about is
+ * the single worst outcome for the floor team.
+ */
+reservationRouter.post(
+  '/:id/decision',
+  authenticate,
+  requireStaff,
+  validate(reservationDecisionSchema),
+  asyncHandler(async (req, res) => {
+    const { decision, tableId, reason } = req.body as {
+      decision: 'APPROVE' | 'REJECT';
+      tableId?: string;
+      reason?: string;
+    };
+
+    const reservation = await prisma.reservation.findUnique({ where: { id: param(req, 'id') } });
+    if (!reservation) throw notFound('Reservation not found');
+    if (!['PENDING', 'WAITLIST'].includes(reservation.status)) {
+      throw badRequest(`This booking is already ${reservation.status.toLowerCase()}`);
+    }
+
+    if (decision === 'REJECT') {
+      const updated = await prisma.reservation.update({
+        where: { id: reservation.id },
+        data: {
+          status: 'REJECTED',
+          tableId: null,
+          waitlistPos: null,
+          rejectionReason: reason || null,
+          approvedById: req.user!.sub,
+          approvedAt: new Date(),
+        },
+      });
+
+      if (reservation.userId) {
+        await prisma.notification.create({
+          data: {
+            userId: reservation.userId,
+            type: 'RESERVATION',
+            title: 'Booking could not be confirmed',
+            body: reason || 'We are unable to seat that party at the requested time.',
+            link: '/dashboard/reservations',
+          },
+        });
+        void sendPush(reservation.userId, {
+          title: 'Booking could not be confirmed',
+          body: reason || 'Tap to pick another time.',
+          url: '/dashboard/reservations',
+        });
+      }
+
+      queueEmail({
+        to: reservation.email,
+        kind: 'reservation-rejected',
+        userId: reservation.userId,
+        email: reservationEmail({
+          name: reservation.name,
+          code: reservation.code,
+          date: reservation.date,
+          time: reservation.time,
+          guests: reservation.guests,
+          status: 'REJECTED',
+          rejectionReason: reason || null,
+          manageUrl: manageUrl(reservation.code),
+        }),
+      });
+
+      await cache.delPrefix(`availability:${reservation.date}`);
+      await audit(req.user!.sub, 'reservation.reject', 'Reservation', reservation.id, req);
+      res.json({ reservation: updated });
+      return;
+    }
+
+    // Approve: honour an explicit table choice, otherwise re-run allocation.
+    const booked = await bookedRanges(reservation.date, reservation.id);
+    let table: { id: string; name: string; zone: string } | null = null;
+
+    if (tableId) {
+      const chosen = await prisma.restaurantTable.findUnique({ where: { id: tableId } });
+      if (!chosen) throw badRequest('That table does not exist');
+      if (chosen.seats < reservation.guests) {
+        throw badRequest(`${chosen.name} seats ${chosen.seats} — the party is ${reservation.guests}`);
+      }
+      const start = toMinutes(reservation.time);
+      const end = start + reservation.durationMin;
+      const clash = booked.some((b) => b.tableId === chosen.id && start < b.endMinutes && b.startMinutes < end);
+      if (clash) throw badRequest(`${chosen.name} is already booked across that window`);
+      table = { id: chosen.id, name: chosen.name, zone: chosen.zone };
+    } else {
+      table = allocateTable(reservation.guests, reservation.time, booked, reservation.seating as 'ANY');
+      if (!table) throw badRequest('No table fits that party at that time — reject or ask the guest to move slot');
+    }
+
+    const updated = await prisma.reservation.update({
+      where: { id: reservation.id },
+      data: {
+        status: 'CONFIRMED',
+        tableId: table.id,
+        waitlistPos: null,
+        rejectionReason: null,
+        approvedById: req.user!.sub,
+        approvedAt: new Date(),
+      },
+      include: { table: true },
+    });
+
+    if (reservation.userId) {
+      await prisma.notification.create({
+        data: {
+          userId: reservation.userId,
+          type: 'RESERVATION',
+          title: 'Table confirmed',
+          body: `Your table for ${reservation.guests} on ${reservation.date} at ${reservation.time} is confirmed. Code ${reservation.code}.`,
+          link: '/dashboard/reservations',
+        },
+      });
+      void sendPush(reservation.userId, {
+        title: 'Table confirmed',
+        body: `${reservation.date} at ${reservation.time} — see you then.`,
+        url: '/dashboard/reservations',
+      });
+    }
+
+    queueEmail({
+      to: reservation.email,
+      kind: 'reservation-confirmed',
+      userId: reservation.userId,
+      email: reservationEmail({
+        name: reservation.name,
+        code: reservation.code,
+        date: reservation.date,
+        time: reservation.time,
+        guests: reservation.guests,
+        status: 'CONFIRMED',
+        tableName: table.name,
+        occasion: reservation.occasion,
+        manageUrl: manageUrl(reservation.code),
+      }),
+    });
+
+    await cache.delPrefix(`availability:${reservation.date}`);
+    await audit(req.user!.sub, 'reservation.approve', 'Reservation', reservation.id, req);
+    res.json({ reservation: updated, table });
   }),
 );
 

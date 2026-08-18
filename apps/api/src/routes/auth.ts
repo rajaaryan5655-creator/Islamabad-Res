@@ -3,6 +3,9 @@ import {
   loginSchema,
   registerSchema,
   oauthSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  verifyEmailSchema,
   profileUpdateSchema,
   addressSchema,
   tierForPoints,
@@ -34,8 +37,19 @@ import {
 } from '../middleware/index.js';
 import { env, isProd } from '../lib/env.js';
 import { audit } from '../services/audit.js';
+import { issueToken, consumeToken } from '../services/tokens.js';
+import { queueEmail, sendEmail, welcomeEmail, verifyEmail, passwordResetEmail } from '../services/email/index.js';
 
 export const authRouter = Router();
+
+/** Links point at the web app, not the API, so they open the customer UI. */
+function verificationUrl(token: string): string {
+  return `${env.WEB_ORIGIN.replace(/\/$/, '')}/verify-email?token=${encodeURIComponent(token)}`;
+}
+
+function resetUrl(token: string): string {
+  return `${env.WEB_ORIGIN.replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
+}
 
 type SafeUser = ReturnType<typeof toSafeUser>;
 
@@ -50,6 +64,7 @@ function toSafeUser(u: {
   lifetimePoints: number;
   tier: string;
   referralCode: string;
+  emailVerified: boolean;
   marketingOptIn: boolean;
   dietaryPrefs: string;
   createdAt: Date;
@@ -65,6 +80,7 @@ function toSafeUser(u: {
     lifetimePoints: u.lifetimePoints,
     tier: u.tier,
     referralCode: u.referralCode,
+    emailVerified: u.emailVerified,
     marketingOptIn: u.marketingOptIn,
     dietaryPrefs: parseList(u.dietaryPrefs),
     memberSince: u.createdAt,
@@ -164,7 +180,159 @@ authRouter.post(
     const fresh = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
     const tokens = await issueSession(res, fresh, req);
     await audit(user.id, 'user.register', 'User', user.id, req);
+
+    // Mail is queued, never awaited: a slow SMTP hop must not delay signup.
+    const verifyToken = await issueToken(user.id, 'EMAIL_VERIFY');
+    const verifyUrl = verificationUrl(verifyToken);
+    queueEmail({
+      to: user.email,
+      kind: 'welcome',
+      userId: user.id,
+      email: welcomeEmail({ name: user.name, verifyUrl }),
+    });
+    queueEmail({
+      to: user.email,
+      kind: 'verify-email',
+      userId: user.id,
+      email: verifyEmail({ name: user.name, verifyUrl }),
+    });
+
     res.status(201).json({ user: toSafeUser(fresh), ...tokens });
+  }),
+);
+
+
+/* --------------------------- email verification --------------------------- */
+
+/**
+ * Confirms an address from the emailed link. Idempotent for an already-verified
+ * account so a second click on the link is not an error the customer sees.
+ */
+authRouter.post(
+  '/verify-email',
+  rateLimit({ windowSeconds: 900, max: 20, keyPrefix: 'verify-email' }),
+  validate(verifyEmailSchema),
+  asyncHandler(async (req, res) => {
+    const { token } = req.body as { token: string };
+    const result = await consumeToken(token, 'EMAIL_VERIFY');
+
+    if (!result.ok) {
+      throw badRequest(
+        result.reason === 'expired'
+          ? 'This verification link has expired. Request a new one from your dashboard.'
+          : 'This verification link is no longer valid.',
+      );
+    }
+
+    const user = await prisma.user.update({
+      where: { id: result.userId },
+      data: { emailVerified: true },
+    });
+    await prisma.notification.create({
+      data: {
+        userId: user.id,
+        type: 'SYSTEM',
+        title: 'Email verified',
+        body: 'Your email address is confirmed. You will now receive order and reservation updates.',
+        link: '/dashboard',
+      },
+    });
+    await audit(user.id, 'user.email_verified', 'User', user.id, req);
+    res.json({ verified: true, user: toSafeUser(user) });
+  }),
+);
+
+/** Re-sends the verification link to the signed-in account. */
+authRouter.post(
+  '/resend-verification',
+  authenticate,
+  rateLimit({ windowSeconds: 900, max: 5, keyPrefix: 'resend-verify' }),
+  asyncHandler(async (req, res) => {
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: req.user!.sub } });
+    if (user.emailVerified) {
+      res.json({ sent: false, message: 'Your email address is already verified.' });
+      return;
+    }
+    const token = await issueToken(user.id, 'EMAIL_VERIFY');
+    const sent = await sendEmail({
+      to: user.email,
+      kind: 'verify-email',
+      userId: user.id,
+      email: verifyEmail({ name: user.name, verifyUrl: verificationUrl(token) }),
+    });
+    res.json({ sent, message: 'Verification link sent. Please check your inbox.' });
+  }),
+);
+
+/* ----------------------------- password reset ----------------------------- */
+
+/**
+ * Always answers 200 with the same body whether or not the address exists —
+ * otherwise this endpoint becomes an account-enumeration oracle.
+ */
+authRouter.post(
+  '/forgot-password',
+  rateLimit({ windowSeconds: 900, max: 5, keyPrefix: 'forgot-password' }),
+  validate(forgotPasswordSchema),
+  asyncHandler(async (req, res) => {
+    const { email } = req.body as { email: string };
+    const user = await prisma.user.findUnique({ where: { email } });
+
+    if (user?.isActive && user.passwordHash) {
+      const token = await issueToken(user.id, 'PASSWORD_RESET');
+      await sendEmail({
+        to: user.email,
+        kind: 'password-reset',
+        userId: user.id,
+        email: passwordResetEmail({ name: user.name, resetUrl: resetUrl(token) }),
+      });
+      await audit(user.id, 'user.password_reset_requested', 'User', user.id, req);
+    }
+
+    res.json({
+      sent: true,
+      message: 'If an account exists for that address, a reset link is on its way.',
+    });
+  }),
+);
+
+/** Completes the reset and revokes every existing session. */
+authRouter.post(
+  '/reset-password',
+  rateLimit({ windowSeconds: 900, max: 10, keyPrefix: 'reset-password' }),
+  validate(resetPasswordSchema),
+  asyncHandler(async (req, res) => {
+    const { token, password } = req.body as { token: string; password: string };
+    const result = await consumeToken(token, 'PASSWORD_RESET');
+
+    if (!result.ok) {
+      throw badRequest(
+        result.reason === 'expired'
+          ? 'This reset link has expired. Please request a new one.'
+          : 'This reset link is no longer valid. Please request a new one.',
+      );
+    }
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: result.userId },
+        data: { passwordHash: await hashPassword(password) },
+      }),
+      // A password change must invalidate sessions an attacker may hold.
+      prisma.session.deleteMany({ where: { userId: result.userId } }),
+      prisma.notification.create({
+        data: {
+          userId: result.userId!,
+          type: 'SYSTEM',
+          title: 'Password changed',
+          body: 'Your password was reset. If this was not you, contact us immediately.',
+          link: '/dashboard',
+        },
+      }),
+    ]);
+
+    await audit(result.userId!, 'user.password_reset', 'User', result.userId!, req);
+    res.json({ reset: true, message: 'Password updated. You can now sign in.' });
   }),
 );
 
