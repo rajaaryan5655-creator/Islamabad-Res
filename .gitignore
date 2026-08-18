@@ -26,3 +26,8 @@ apps/api/src/generated/
 
 # test
 coverage/
+
+# The GitHub App token used by this environment lacks the `workflows` scope, so
+# .github/workflows cannot be pushed. The CI definition is kept here for the
+# maintainer to add manually — see the PR description.
+.github/workflows/
