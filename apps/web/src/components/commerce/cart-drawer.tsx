@@ -7,13 +7,13 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { Minus, Plus, ShoppingBag, Trash2, X } from 'lucide-react';
 import { DELIVERY_ZONES, FREE_DELIVERY_THRESHOLD } from '@islamabad/shared';
-import { useCart } from '@/store/cart';
+import { useCart , lineTotal } from '@/store/cart';
 import { api, type Quote } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { formatPKR } from '@/lib/utils';
 
 export function CartDrawer() {
-  const { lines, isOpen, close, setQuantity, remove, type, zoneId, couponCode } = useCart();
+  const { lines, isOpen, close, setQuantity, remove, type, zoneId, couponCode, toOrderItems } = useCart();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
@@ -29,10 +29,10 @@ export function CartDrawer() {
   }, [isOpen]);
 
   const { data } = useQuery({
-    queryKey: ['quote', lines.map((l) => `${l.menuItemId}x${l.quantity}`).join(','), type, zoneId, couponCode],
+    queryKey: ['quote', lines.map((l) => `${l.id}x${l.quantity}`).join(','), type, zoneId, couponCode],
     queryFn: () =>
       api.post<{ quote: Quote }>('/api/orders/quote', {
-        items: lines.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity })),
+        items: toOrderItems(),
         type,
         zoneId,
         couponCode,
@@ -42,7 +42,7 @@ export function CartDrawer() {
   });
 
   const quote = data?.quote;
-  const subtotal = lines.reduce((n, l) => n + l.price * l.quantity, 0);
+  const subtotal = lines.reduce((n, l) => n + lineTotal(l), 0);
   const toFreeDelivery = FREE_DELIVERY_THRESHOLD - subtotal;
   const zone = DELIVERY_ZONES.find((z) => z.id === zoneId);
 
@@ -121,7 +121,7 @@ export function CartDrawer() {
                     <AnimatePresence initial={false}>
                       {lines.map((line) => (
                         <motion.li
-                          key={line.menuItemId}
+                          key={line.id}
                           layout
                           initial={{ opacity: 0, height: 0 }}
                           animate={{ opacity: 1, height: 'auto' }}
@@ -141,18 +141,23 @@ export function CartDrawer() {
                                 {line.name}
                               </Link>
                               <button
-                                onClick={() => remove(line.menuItemId)}
+                                onClick={() => remove(line.id)}
                                 aria-label={`Remove ${line.name}`}
                                 className="shrink-0 p-1 text-black/30 transition-colors hover:text-ember-500"
                               >
                                 <Trash2 className="size-4" />
                               </button>
                             </div>
+                            {line.options.length > 0 && (
+                              <p className="text-xs leading-snug text-black/50">
+                                {line.options.map((o) => o.label).join(' · ')}
+                              </p>
+                            )}
                             {line.notes && <p className="truncate text-xs italic text-black/50">“{line.notes}”</p>}
                             <div className="mt-auto flex items-center justify-between pt-1.5">
                               <div className="flex items-center rounded-sm border border-black/12">
                                 <button
-                                  onClick={() => setQuantity(line.menuItemId, line.quantity - 1)}
+                                  onClick={() => setQuantity(line.id, line.quantity - 1)}
                                   aria-label={`Decrease ${line.name}`}
                                   className="flex size-7 items-center justify-center transition-colors hover:bg-black/5"
                                 >
@@ -160,7 +165,7 @@ export function CartDrawer() {
                                 </button>
                                 <span className="w-8 text-center text-sm font-semibold tabular-nums">{line.quantity}</span>
                                 <button
-                                  onClick={() => setQuantity(line.menuItemId, line.quantity + 1)}
+                                  onClick={() => setQuantity(line.id, line.quantity + 1)}
                                   aria-label={`Increase ${line.name}`}
                                   className="flex size-7 items-center justify-center transition-colors hover:bg-black/5"
                                 >
@@ -168,7 +173,7 @@ export function CartDrawer() {
                                 </button>
                               </div>
                               <span className="font-semibold text-ember-500 tabular-nums">
-                                {formatPKR(line.price * line.quantity)}
+                                {formatPKR(lineTotal(line))}
                               </span>
                             </div>
                           </div>

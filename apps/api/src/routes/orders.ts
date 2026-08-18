@@ -17,6 +17,7 @@ import {
 import { buildLines, createOrder, resolveCoupon, toCouponLike, transitionOrder } from '../services/orders.js';
 import { createPaymentIntent } from '../services/payments.js';
 import { audit } from '../services/audit.js';
+import { parseOptions } from '../lib/json.js';
 
 export const orderRouter = Router();
 
@@ -153,19 +154,59 @@ orderRouter.post(
     });
     const available = new Map(menuItems.filter((m) => m.isAvailable).map((m) => [m.id, m]));
 
-    res.json({
-      items: order.items
-        .filter((i) => available.has(i.menuItemId))
-        .map((i) => ({
+    // Option choices may have been retired or sold out since the original
+    // order. Re-validate each one and report what changed, rather than
+    // silently rebuilding a basket the kitchen cannot make.
+    const choiceIds = order.items.flatMap((i) => parseOptions(i.options).map((o) => o.choiceId));
+    const liveChoices = choiceIds.length
+      ? await prisma.menuOptionChoice.findMany({
+          where: { id: { in: choiceIds }, isAvailable: true },
+          include: { group: { select: { id: true, name: true } } },
+        })
+      : [];
+    const choiceById = new Map(liveChoices.map((c) => [c.id, c]));
+
+    const changed = new Set<string>();
+    const items = order.items
+      .filter((i) => available.has(i.menuItemId))
+      .map((i) => {
+        const menuItem = available.get(i.menuItemId)!;
+        const stored = parseOptions(i.options);
+        const options = stored
+          .filter((o) => {
+            if (choiceById.has(o.choiceId)) return true;
+            changed.add(i.name);
+            return false;
+          })
+          .map((o) => {
+            const live = choiceById.get(o.choiceId)!;
+            return {
+              groupId: live.group.id,
+              groupName: live.group.name,
+              choiceId: live.id,
+              label: live.label,
+              // Today's surcharge, not the one captured on the old order.
+              priceDelta: live.priceDelta,
+            };
+          });
+
+        return {
           menuItemId: i.menuItemId,
           name: i.name,
           quantity: i.quantity,
-          price: available.get(i.menuItemId)!.price,
-          image: available.get(i.menuItemId)!.image,
-          slug: available.get(i.menuItemId)!.slug,
+          // Current menu price — a reorder must never resurrect an old price.
+          price: menuItem.price,
+          image: menuItem.image,
+          slug: menuItem.slug,
           notes: i.notes,
-        })),
+          options,
+        };
+      });
+
+    res.json({
+      items,
       unavailable: order.items.filter((i) => !available.has(i.menuItemId)).map((i) => i.name),
+      optionsChanged: [...changed],
     });
   }),
 );

@@ -43,24 +43,100 @@ export function toCouponLike(coupon: { code: string; type: string; value: number
   };
 }
 
-/** Loads menu items and builds authoritative price lines from server-side prices. */
-export async function buildLines(items: { menuItemId: string; quantity: number; notes?: string }[]) {
+export interface ResolvedOption {
+  groupId: string;
+  groupName: string;
+  choiceId: string;
+  label: string;
+  priceDelta: number;
+}
+
+export interface OrderLine extends PriceLine {
+  notes?: string;
+  options: ResolvedOption[];
+}
+
+export interface CartLineInput {
+  menuItemId: string;
+  quantity: number;
+  notes?: string;
+  options?: { groupId: string; choiceId: string }[];
+}
+
+/**
+ * Loads menu items and builds authoritative price lines.
+ *
+ * Every price — base and option surcharge — is read from the database, never
+ * from the request. The client sends only identifiers, so a tampered cart
+ * cannot change what an order costs. Option groups are validated against their
+ * required/min/max rules here too, because the checkout API is a public
+ * surface, not just a backend for our own UI.
+ */
+export async function buildLines(items: CartLineInput[]): Promise<OrderLine[]> {
   const ids = items.map((i) => i.menuItemId);
-  const menuItems = await prisma.menuItem.findMany({ where: { id: { in: ids } } });
+  const menuItems = await prisma.menuItem.findMany({
+    where: { id: { in: ids } },
+    include: { optionGroups: { include: { choices: true }, orderBy: { sortOrder: 'asc' } } },
+  });
   const byId = new Map(menuItems.map((m) => [m.id, m]));
 
-  const lines: (PriceLine & { notes?: string })[] = [];
+  const lines: OrderLine[] = [];
   for (const item of items) {
     const menuItem = byId.get(item.menuItemId);
-    if (!menuItem) throw badRequest(`One of the items in your cart is no longer on the menu`);
+    if (!menuItem) throw badRequest('One of the items in your cart is no longer on the menu');
     if (!menuItem.isAvailable) throw conflict(`${menuItem.name} has just sold out — please remove it to continue`);
+
+    const selected = item.options ?? [];
+    const resolved: ResolvedOption[] = [];
+
+    for (const group of menuItem.optionGroups) {
+      const picks = selected.filter((s) => s.groupId === group.id);
+
+      if (group.isRequired && picks.length === 0) {
+        throw badRequest(`Please choose a ${group.name.toLowerCase()} for ${menuItem.name}`);
+      }
+      if (picks.length > 0) {
+        const min = group.type === 'SINGLE' ? Math.min(group.minSelect, 1) : group.minSelect;
+        const max = group.type === 'SINGLE' ? 1 : group.maxSelect;
+        if (picks.length < min) {
+          throw badRequest(`Choose at least ${min} ${group.name.toLowerCase()} for ${menuItem.name}`);
+        }
+        if (picks.length > max) {
+          throw badRequest(`Choose at most ${max} ${group.name.toLowerCase()} for ${menuItem.name}`);
+        }
+      }
+
+      for (const pick of picks) {
+        const choice = group.choices.find((c) => c.id === pick.choiceId);
+        if (!choice) throw badRequest(`That ${group.name.toLowerCase()} option is not available for ${menuItem.name}`);
+        if (!choice.isAvailable) throw conflict(`${choice.label} is unavailable right now`);
+        resolved.push({
+          groupId: group.id,
+          groupName: group.name,
+          choiceId: choice.id,
+          label: choice.label,
+          priceDelta: choice.priceDelta,
+        });
+      }
+    }
+
+    // Reject selections that point at groups this dish does not have.
+    const validGroupIds = new Set(menuItem.optionGroups.map((g) => g.id));
+    if (selected.some((sel) => !validGroupIds.has(sel.groupId))) {
+      throw badRequest(`An option in your cart no longer applies to ${menuItem.name}`);
+    }
+
+    const unitPrice = menuItem.price + resolved.reduce((sum, o) => sum + o.priceDelta, 0);
+    if (unitPrice < 0) throw badRequest(`Invalid option pricing for ${menuItem.name}`);
+
     lines.push({
       menuItemId: menuItem.id,
       name: menuItem.name,
-      unitPrice: menuItem.price,
+      unitPrice,
       quantity: item.quantity,
-      total: menuItem.price * item.quantity,
+      total: unitPrice * item.quantity,
       notes: item.notes,
+      options: resolved,
     });
   }
   return lines;
@@ -136,6 +212,7 @@ export async function createOrder({ input, userId }: CreateOrderArgs) {
             quantity: l.quantity,
             total: l.total,
             notes: l.notes ?? null,
+            options: JSON.stringify(l.options),
           })),
         },
         events: { create: { status: 'PENDING', note: 'Order placed' } },

@@ -1,5 +1,11 @@
 import { Router } from 'express';
-import { categorySchema, menuItemSchema, menuQuerySchema } from '@islamabad/shared';
+import {
+  categorySchema,
+  menuItemSchema,
+  menuQuerySchema,
+  optionGroupSchema,
+  type OptionGroupInput,
+} from '@islamabad/shared';
 import { prisma } from '../lib/prisma.js';
 import { cache, cached, CACHE_KEYS } from '../lib/cache.js';
 import { parseList, stringifyList } from '../lib/json.js';
@@ -178,6 +184,10 @@ menuRouter.get(
       include: {
         category: { select: { name: true, slug: true } },
         reviews: { where: { isApproved: true }, orderBy: { createdAt: 'desc' }, take: 10 },
+        optionGroups: {
+          orderBy: { sortOrder: 'asc' },
+          include: { choices: { orderBy: { sortOrder: 'asc' } } },
+        },
       },
     });
     if (!item) throw notFound('That dish is not on our menu');
@@ -189,10 +199,152 @@ menuRouter.get(
     });
 
     res.json({
-      item: serialize(item),
+      item: {
+        ...serialize(item),
+        optionGroups: item.optionGroups.map((g) => ({
+          id: g.id,
+          name: g.name,
+          type: g.type,
+          isRequired: g.isRequired,
+          minSelect: g.minSelect,
+          maxSelect: g.maxSelect,
+          choices: g.choices
+            .filter((c) => c.isAvailable)
+            .map((c) => ({ id: c.id, label: c.label, priceDelta: c.priceDelta, isDefault: c.isDefault })),
+        })),
+      },
       reviews: item.reviews,
       related: related.map(serialize),
     });
+  }),
+);
+
+
+/* ------------------------ admin: dish customization ----------------------- */
+
+/**
+ * Option groups let a dish carry portion sizes, spice levels and add-ons.
+ * Prices live here, on the server, and are re-read at checkout — the client
+ * only ever sends choice ids.
+ */
+menuRouter.get(
+  '/:id/options',
+  authenticate,
+  requireStaff,
+  asyncHandler(async (req, res) => {
+    const groups = await prisma.menuOptionGroup.findMany({
+      where: { menuItemId: param(req, 'id') },
+      orderBy: { sortOrder: 'asc' },
+      include: { choices: { orderBy: { sortOrder: 'asc' } } },
+    });
+    res.json({ groups });
+  }),
+);
+
+menuRouter.post(
+  '/:id/options',
+  authenticate,
+  requireManager,
+  validate(optionGroupSchema),
+  asyncHandler(async (req, res) => {
+    const menuItemId = param(req, 'id');
+    const input = req.body as OptionGroupInput;
+
+    const item = await prisma.menuItem.findUnique({ where: { id: menuItemId }, select: { id: true } });
+    if (!item) throw notFound('That dish is not on our menu');
+
+    const group = await prisma.menuOptionGroup.create({
+      data: {
+        menuItemId,
+        name: input.name,
+        type: input.type,
+        isRequired: input.isRequired ?? false,
+        minSelect: input.minSelect ?? (input.isRequired ? 1 : 0),
+        maxSelect: input.type === 'SINGLE' ? 1 : (input.maxSelect ?? 1),
+        sortOrder: input.sortOrder ?? 0,
+        choices: {
+          create: input.choices.map((c, index) => ({
+            label: c.label,
+            priceDelta: c.priceDelta ?? 0,
+            isDefault: c.isDefault ?? false,
+            isAvailable: c.isAvailable ?? true,
+            sortOrder: c.sortOrder ?? index,
+          })),
+        },
+      },
+      include: { choices: true },
+    });
+
+    await cache.delPrefix('menu:');
+    await audit(req.user!.sub, 'menu.option_group.create', 'MenuOptionGroup', group.id, req);
+    res.status(201).json({ group });
+  }),
+);
+
+menuRouter.patch(
+  '/options/:groupId',
+  authenticate,
+  requireManager,
+  asyncHandler(async (req, res) => {
+    const groupId = param(req, 'groupId');
+    const input = optionGroupSchema.partial().parse(req.body);
+
+    // Replacing choices wholesale keeps the admin UI simple; existing orders
+    // are unaffected because they store a snapshot of what was chosen.
+    const group = await prisma.$transaction(async (tx) => {
+      if (input.choices) {
+        await tx.menuOptionChoice.deleteMany({ where: { groupId } });
+        await tx.menuOptionChoice.createMany({
+          data: input.choices.map((c, index) => ({
+            groupId,
+            label: c.label,
+            priceDelta: c.priceDelta ?? 0,
+            isDefault: c.isDefault ?? false,
+            isAvailable: c.isAvailable ?? true,
+            sortOrder: c.sortOrder ?? index,
+          })),
+        });
+      }
+      const { choices: _choices, ...rest } = input;
+      return tx.menuOptionGroup.update({
+        where: { id: groupId },
+        data: rest,
+        include: { choices: { orderBy: { sortOrder: 'asc' } } },
+      });
+    });
+
+    await cache.delPrefix('menu:');
+    await audit(req.user!.sub, 'menu.option_group.update', 'MenuOptionGroup', groupId, req);
+    res.json({ group });
+  }),
+);
+
+menuRouter.delete(
+  '/options/:groupId',
+  authenticate,
+  requireManager,
+  asyncHandler(async (req, res) => {
+    const groupId = param(req, 'groupId');
+    await prisma.menuOptionGroup.delete({ where: { id: groupId } });
+    await cache.delPrefix('menu:');
+    await audit(req.user!.sub, 'menu.option_group.delete', 'MenuOptionGroup', groupId, req);
+    res.json({ deleted: true });
+  }),
+);
+
+/** Quick toggle for a sold-out add-on, available to floor staff. */
+menuRouter.patch(
+  '/options/choices/:choiceId',
+  authenticate,
+  requireStaff,
+  asyncHandler(async (req, res) => {
+    const { isAvailable } = req.body as { isAvailable: boolean };
+    const choice = await prisma.menuOptionChoice.update({
+      where: { id: param(req, 'choiceId') },
+      data: { isAvailable: Boolean(isAvailable) },
+    });
+    await cache.delPrefix('menu:');
+    res.json({ choice });
   }),
 );
 

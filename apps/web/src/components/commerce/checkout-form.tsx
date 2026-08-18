@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { Check, CreditCard, Loader2, Lock, ShieldCheck, Sparkles, Tag, Wallet } from 'lucide-react';
 import { DELIVERY_ZONES, PAYMENT_METHOD_META, POINT_VALUE, checkoutSchema } from '@islamabad/shared';
 import { ApiError, api, type Order, type Quote } from '@/lib/api';
-import { useCart } from '@/store/cart';
+import { useCart , lineTotal } from '@/store/cart';
 import { useAuth } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import { Input, Select, Textarea } from '@/components/ui/primitives';
@@ -25,7 +25,7 @@ const METHOD_ICONS: Record<string, typeof CreditCard> = {
 
 export function CheckoutForm() {
   const router = useRouter();
-  const { lines, type, zoneId, couponCode, redeemPoints, setZone, setCoupon, setRedeemPoints, clear } = useCart();
+  const { lines, type, zoneId, couponCode, redeemPoints, setZone, setCoupon, setRedeemPoints, clear, toOrderItems } = useCart();
   const user = useAuth((s) => s.user);
 
   const [form, setForm] = useState({ name: '', phone: '', email: '', address: '', notes: '', tableNumber: '' });
@@ -56,10 +56,10 @@ export function CheckoutForm() {
   }, [addressData, addressId, setZone]);
 
   const { data: quoteData, isFetching: quoting } = useQuery({
-    queryKey: ['checkout-quote', lines.map((l) => `${l.menuItemId}x${l.quantity}`).join(','), type, zoneId, couponCode, redeemPoints],
+    queryKey: ['checkout-quote', lines.map((l) => `${l.id}x${l.quantity}`).join(','), type, zoneId, couponCode, redeemPoints],
     queryFn: () =>
       api.post<{ quote: Quote }>('/api/orders/quote', {
-        items: lines.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity })),
+        items: toOrderItems(),
         type,
         zoneId,
         couponCode,
@@ -94,7 +94,7 @@ export function CheckoutForm() {
 
     const payload = {
       type,
-      items: lines.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity, notes: l.notes })),
+      items: toOrderItems(),
       customerName: form.name,
       customerPhone: form.phone,
       customerEmail: form.email || undefined,
@@ -344,15 +344,18 @@ export function CheckoutForm() {
 
           <ul className="mb-4 max-h-56 space-y-3 overflow-y-auto border-b border-black/8 pb-4">
             {lines.map((l) => (
-              <li key={l.menuItemId} className="flex gap-3">
+              <li key={l.id} className="flex gap-3">
                 <div className="relative size-12 shrink-0 overflow-hidden rounded-sm bg-black/5">
                   <Image src={l.image} alt="" fill sizes="48px" className="object-cover" />
                 </div>
                 <div className="min-w-0 flex-1 text-sm">
                   <p className="truncate font-medium">{l.name}</p>
+                  {l.options.length > 0 && (
+                    <p className="text-xs leading-snug text-black/45">{l.options.map((o) => o.label).join(' · ')}</p>
+                  )}
                   <p className="text-xs text-black/45">Qty {l.quantity}</p>
                 </div>
-                <span className="shrink-0 text-sm tabular-nums">{formatPKR(l.price * l.quantity)}</span>
+                <span className="shrink-0 text-sm tabular-nums">{formatPKR(lineTotal(l))}</span>
               </li>
             ))}
           </ul>

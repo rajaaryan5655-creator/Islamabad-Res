@@ -24,3 +24,18 @@ export function parseJson<T>(value: string | null | undefined, fallback: T): T {
     return fallback;
   }
 }
+
+/** A snapshot of the options chosen on an order line. */
+export interface StoredOption {
+  groupId: string;
+  groupName: string;
+  choiceId: string;
+  label: string;
+  priceDelta: number;
+}
+
+/** Reads the `OrderItem.options` JSON column, tolerating legacy null/empty rows. */
+export function parseOptions(value: string | null | undefined): StoredOption[] {
+  const parsed = parseJson<StoredOption[]>(value, []);
+  return Array.isArray(parsed) ? parsed : [];
+}

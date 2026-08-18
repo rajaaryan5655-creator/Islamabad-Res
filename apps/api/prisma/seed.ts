@@ -112,6 +112,14 @@ const COUPONS = [
   { code: 'HAPPYHOUR', description: '25% off between 3 PM and 6 PM', type: 'PERCENT', value: 25, minOrder: 600, maxDiscount: 600 },
 ];
 
+interface OptionGroupSeed {
+  name: string;
+  type: 'SINGLE' | 'MULTI';
+  isRequired?: boolean;
+  maxSelect?: number;
+  choices: { label: string; priceDelta?: number; isDefault?: boolean }[];
+}
+
 async function main() {
   console.log('[seed] starting');
 
@@ -185,6 +193,147 @@ async function main() {
     menuIds.push(created.id);
   }
   console.log(`[seed] ${ITEMS.length} menu items`);
+
+  /* --------------------------- dish customization ------------------------- */
+  /**
+   * Real option sets taken from how the kitchen actually sells these dishes:
+   * karahi by weight, biryani by portion, BBQ by skewer count.
+   */
+  const bySlug = new Map(
+    (await prisma.menuItem.findMany({ select: { id: true, slug: true, categoryId: true } })).map((m) => [m.slug, m]),
+  );
+  const catOf = new Map([...categoryIds].map(([name, id]) => [id, name]));
+
+  const groupsFor = (slug: string): OptionGroupSeed[] => {
+    const item = bySlug.get(slug);
+    if (!item) return [];
+    const category = catOf.get(item.categoryId);
+
+    if (category === 'Karahi & Handi') {
+      return [
+        {
+          name: 'Portion',
+          type: 'SINGLE',
+          isRequired: true,
+          choices: [
+            { label: 'Half kg', priceDelta: -400 },
+            { label: 'One kg', priceDelta: 0, isDefault: true },
+            { label: 'One and a half kg', priceDelta: 700 },
+          ],
+        },
+        {
+          name: 'Spice level',
+          type: 'SINGLE',
+          isRequired: true,
+          choices: [
+            { label: 'Mild' },
+            { label: 'Medium', isDefault: true },
+            { label: 'Hot — as the chef makes it' },
+            { label: 'Extra hot' },
+          ],
+        },
+        {
+          name: 'Add-ons',
+          type: 'MULTI',
+          maxSelect: 4,
+          choices: [
+            { label: 'Extra raita', priceDelta: 90 },
+            { label: 'Two roghni naan', priceDelta: 160 },
+            { label: 'Extra green chilli & ginger', priceDelta: 60 },
+            { label: 'Fresh lemon wedges', priceDelta: 40 },
+          ],
+        },
+      ];
+    }
+
+    if (category === 'Biryani') {
+      return [
+        {
+          name: 'Portion',
+          type: 'SINGLE',
+          isRequired: true,
+          choices: [
+            { label: 'Single plate', priceDelta: 0, isDefault: true },
+            { label: 'Family (serves 4)', priceDelta: 1250 },
+            { label: 'Degh quarter (serves 10)', priceDelta: 3400 },
+          ],
+        },
+        {
+          name: 'Cut',
+          type: 'SINGLE',
+          choices: [
+            { label: 'Mixed pieces', isDefault: true },
+            { label: 'Leg piece', priceDelta: 80 },
+            { label: 'Boneless', priceDelta: 120 },
+          ],
+        },
+        {
+          name: 'Sides',
+          type: 'MULTI',
+          maxSelect: 3,
+          choices: [
+            { label: 'Extra raita', priceDelta: 90 },
+            { label: 'Shami kebab', priceDelta: 140 },
+            { label: 'Kachumber salad', priceDelta: 70 },
+          ],
+        },
+      ];
+    }
+
+    if (category === 'BBQ') {
+      return [
+        {
+          name: 'Skewers',
+          type: 'SINGLE',
+          isRequired: true,
+          choices: [
+            { label: 'Four sticks', priceDelta: 0, isDefault: true },
+            { label: 'Six sticks', priceDelta: 380 },
+            { label: 'Ten sticks (platter)', priceDelta: 950 },
+          ],
+        },
+        {
+          name: 'Served with',
+          type: 'MULTI',
+          maxSelect: 3,
+          choices: [
+            { label: 'Mint chutney', priceDelta: 0, isDefault: true },
+            { label: 'Imli chutney', priceDelta: 0 },
+            { label: 'Two plain naan', priceDelta: 120 },
+          ],
+        },
+      ];
+    }
+
+    return [];
+  };
+
+  let groupCount = 0;
+  for (const [slug, item] of bySlug) {
+    for (const [order, group] of groupsFor(slug).entries()) {
+      await prisma.menuOptionGroup.create({
+        data: {
+          menuItemId: item.id,
+          name: group.name,
+          type: group.type,
+          isRequired: group.isRequired ?? false,
+          minSelect: group.isRequired ? 1 : 0,
+          maxSelect: group.type === 'SINGLE' ? 1 : (group.maxSelect ?? 1),
+          sortOrder: order,
+          choices: {
+            create: group.choices.map((c, i) => ({
+              label: c.label,
+              priceDelta: c.priceDelta ?? 0,
+              isDefault: c.isDefault ?? false,
+              sortOrder: i,
+            })),
+          },
+        },
+      });
+      groupCount += 1;
+    }
+  }
+  console.log(`[seed] ${groupCount} dish option groups`);
 
   /* -------------------------------- coupons ------------------------------ */
   const expires = new Date();

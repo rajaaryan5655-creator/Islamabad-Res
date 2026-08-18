@@ -105,6 +105,24 @@ export const api = {
 
 /* ------------------------------- API types -------------------------------- */
 
+export interface MenuOptionChoice {
+  id: string;
+  label: string;
+  priceDelta: number;
+  isDefault: boolean;
+}
+
+/** Dish customization: portion sizes, spice levels, add-ons. */
+export interface MenuOptionGroup {
+  id: string;
+  name: string;
+  type: 'SINGLE' | 'MULTI';
+  isRequired: boolean;
+  minSelect: number;
+  maxSelect: number;
+  choices: MenuOptionChoice[];
+}
+
 export interface MenuItem {
   id: string;
   name: string;
@@ -131,6 +149,8 @@ export interface MenuItem {
   rating: number;
   ratingCount: number;
   orderCount: number;
+  /** Only returned by the single-dish endpoint, not by list endpoints. */
+  optionGroups?: MenuOptionGroup[];
 }
 
 export interface MenuCategory {

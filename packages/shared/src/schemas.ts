@@ -133,6 +133,27 @@ export const categorySchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+export const optionChoiceSchema = z.object({
+  label: z.string().trim().min(1).max(60),
+  priceDelta: z.number().int().min(-5000).max(20000).optional(),
+  isDefault: z.boolean().optional(),
+  isAvailable: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+export const optionGroupSchema = z.object({
+  name: z.string().trim().min(2).max(40),
+  type: z.enum(['SINGLE', 'MULTI']),
+  isRequired: z.boolean().optional(),
+  minSelect: z.number().int().min(0).max(20).optional(),
+  maxSelect: z.number().int().min(1).max(20).optional(),
+  sortOrder: z.number().int().optional(),
+  choices: z.array(optionChoiceSchema).min(1).max(20),
+});
+
+export type OptionGroupInput = z.infer<typeof optionGroupSchema>;
+export type OptionChoiceInput = z.infer<typeof optionChoiceSchema>;
+
 /* --------------------------------- orders -------------------------------- */
 
 export const selectedOptionSchema = z.object({

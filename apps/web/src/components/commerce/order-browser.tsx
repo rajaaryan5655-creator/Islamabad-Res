@@ -7,7 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Bike, Search, ShoppingBag, Store, UtensilsCrossed } from 'lucide-react';
 import { DELIVERY_ZONES } from '@islamabad/shared';
 import { api, type MenuCategory, type MenuItem, type Quote } from '@/lib/api';
-import { useCart, type OrderType } from '@/store/cart';
+import { useCart, type OrderType , lineTotal } from '@/store/cart';
 import { DishCard } from '@/components/menu/dish-card';
 import { Button } from '@/components/ui/button';
 import { cn, formatPKR } from '@/lib/utils';
@@ -21,7 +21,7 @@ const TYPES: { value: OrderType; label: string; Icon: typeof Bike; hint: string 
 export function OrderBrowser({ items, categories }: { items: MenuItem[]; categories: MenuCategory[] }) {
   const [category, setCategory] = useState('all');
   const [search, setSearch] = useState('');
-  const { lines, type, zoneId, couponCode, setType, setZone, open } = useCart();
+  const { lines, type, zoneId, couponCode, setType, setZone, open, toOrderItems } = useCart();
 
   const filtered = useMemo(() => {
     let list = items;
@@ -32,10 +32,10 @@ export function OrderBrowser({ items, categories }: { items: MenuItem[]; categor
   }, [items, category, search]);
 
   const { data: quoteData } = useQuery({
-    queryKey: ['order-quote', lines.map((l) => `${l.menuItemId}x${l.quantity}`).join(','), type, zoneId, couponCode],
+    queryKey: ['order-quote', lines.map((l) => `${l.id}x${l.quantity}`).join(','), type, zoneId, couponCode],
     queryFn: () =>
       api.post<{ quote: Quote }>('/api/orders/quote', {
-        items: lines.map((l) => ({ menuItemId: l.menuItemId, quantity: l.quantity })),
+        items: toOrderItems(),
         type,
         zoneId,
         couponCode,
@@ -170,11 +170,11 @@ export function OrderBrowser({ items, categories }: { items: MenuItem[]; categor
             <>
               <ul className="mb-4 space-y-2.5 border-b border-black/8 pb-4">
                 {lines.map((l) => (
-                  <li key={l.menuItemId} className="flex justify-between gap-3 text-sm">
+                  <li key={l.id} className="flex justify-between gap-3 text-sm">
                     <span className="min-w-0">
                       <span className="font-medium text-black/50">{l.quantity}×</span> {l.name}
                     </span>
-                    <span className="shrink-0 tabular-nums">{formatPKR(l.price * l.quantity)}</span>
+                    <span className="shrink-0 tabular-nums">{formatPKR(lineTotal(l))}</span>
                   </li>
                 ))}
               </ul>

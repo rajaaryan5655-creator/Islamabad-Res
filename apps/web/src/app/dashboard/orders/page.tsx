@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { ChevronDown, RotateCcw, X } from 'lucide-react';
 import { ORDER_STATUS_META, type OrderStatus } from '@islamabad/shared';
 import { api, type MenuItem, type Order } from '@/lib/api';
-import { useCart } from '@/store/cart';
+import { useCart, type CartOption } from '@/store/cart';
 import { Button } from '@/components/ui/button';
 import { Badge, Skeleton } from '@/components/ui/primitives';
 import { cn, formatDate, formatPKR } from '@/lib/utils';
@@ -16,15 +16,19 @@ interface ReorderLine {
   menuItemId: string;
   name: string;
   quantity: number;
+  /** Today's menu price, resolved server-side — never the historical one. */
   price: number;
   image: string;
   slug: string;
   notes: string | null;
+  options: CartOption[];
 }
 
 interface ReorderResponse {
   items: ReorderLine[];
   unavailable: string[];
+  /** Dishes whose saved options are no longer offered. */
+  optionsChanged: string[];
 }
 
 export default function OrdersPage() {
@@ -51,10 +55,24 @@ export default function OrdersPage() {
     mutationFn: (id: string) => api.post<ReorderResponse>(`/api/orders/${id}/reorder`),
     onSuccess: (res) => {
       for (const item of res.items) {
-        add({ ...item, id: item.menuItemId } as unknown as MenuItem, item.quantity);
+        // Build a minimal MenuItem from the fields the cart actually reads, so
+        // the line carries the current price rather than the old order's.
+        const menuItem: Pick<MenuItem, 'id' | 'name' | 'slug' | 'price' | 'image'> = {
+          id: item.menuItemId,
+          name: item.name,
+          slug: item.slug,
+          price: item.price,
+          image: item.image,
+        };
+        add(menuItem as MenuItem, item.quantity, item.notes ?? undefined, item.options);
       }
+
       if (res.unavailable.length) {
         toast.warning(`Unavailable today: ${res.unavailable.join(', ')}`);
+      } else if (res.optionsChanged.length) {
+        toast.warning(`Some options have changed on: ${res.optionsChanged.join(', ')}`, {
+          description: 'Please check your cart before ordering.',
+        });
       } else {
         toast.success('Added back to your cart');
       }
