@@ -248,6 +248,8 @@ export const couponSchema = z.object({
   minOrder: z.number().int().nonnegative().default(0),
   maxDiscount: z.number().int().positive().nullable().optional(),
   usageLimit: z.number().int().positive().nullable().optional(),
+  /** Redemptions allowed per customer — matched on account, email and phone. */
+  perUserLimit: z.number().int().positive().nullable().optional(),
   startsAt: z.string().datetime().optional(),
   expiresAt: z.string().datetime().nullable().optional(),
   isActive: z.boolean().default(true),

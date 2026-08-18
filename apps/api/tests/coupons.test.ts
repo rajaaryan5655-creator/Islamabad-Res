@@ -95,6 +95,28 @@ describe('perUserLimit', () => {
   });
 });
 
+describe('couponSchema', () => {
+  it('keeps perUserLimit — it was silently stripped before, making the limit unsettable from the admin UI', async () => {
+    const { couponSchema } = await import('@islamabad/shared');
+    const parsed = couponSchema.parse({
+      code: 'schematest',
+      description: 'One per customer',
+      type: 'FIXED',
+      value: 300,
+      perUserLimit: 1,
+    });
+    expect(parsed.perUserLimit).toBe(1);
+    expect(parsed.code).toBe('SCHEMATEST');
+  });
+
+  it('allows perUserLimit to be omitted or explicitly null', async () => {
+    const { couponSchema } = await import('@islamabad/shared');
+    const base = { code: 'NOLIMIT', description: 'Unlimited', type: 'PERCENT' as const, value: 10 };
+    expect(couponSchema.parse(base).perUserLimit).toBeUndefined();
+    expect(couponSchema.parse({ ...base, perUserLimit: null }).perUserLimit).toBeNull();
+  });
+});
+
 describe('coupon validity', () => {
   it('rejects an unknown code', async () => {
     await expect(resolveCoupon('NOPE', {})).rejects.toThrow(/not valid/i);

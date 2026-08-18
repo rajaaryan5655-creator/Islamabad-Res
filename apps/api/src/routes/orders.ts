@@ -108,7 +108,7 @@ orderRouter.post(
     const order = await createOrder({ input, userId: req.user?.sub ?? null });
     const payment = await createPaymentIntent(order);
     await audit(req.user?.sub ?? null, 'order.create', 'Order', order.id, req, { total: order.total });
-    res.status(201).json({ order, payment });
+    res.status(201).json({ order: serializeOrder(order), payment });
   }),
 );
 
