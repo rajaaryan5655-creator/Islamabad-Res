@@ -1,3 +1,25 @@
 node_modules/
 .DS_Store
 *.log
+
+# build output
+.next/
+dist/
+out/
+*.tsbuildinfo
+
+# env
+.env
+.env.local
+.env.*.local
+
+# database
+*.db
+*.db-journal
+*.sqlite
+
+# generated prisma client
+apps/api/src/generated/
+
+# test
+coverage/
