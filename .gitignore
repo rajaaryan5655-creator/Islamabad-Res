@@ -16,6 +16,9 @@ out/
 # database
 *.db
 *.db-journal
+# SQLite write-ahead log sidecars — binary, per-machine, never useful in git.
+*.db-shm
+*.db-wal
 *.sqlite
 
 # generated prisma client
